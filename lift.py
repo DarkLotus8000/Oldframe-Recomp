@@ -20,6 +20,10 @@ DECODER_HASH = "e01d86dafc88c9c9332f27787292caff66e1c3e288b084e6c00c45c4bfa1c7c4
 STREAM_RVA = 0x0B3860
 ENTRY_RVA = 0x0B3930
 READ_PAGES_RVA = 0x0A5C60
+START_IO_RVA = 0x0A6C20
+READ_COMPLETE_RVA = 0x0A6BA0
+SELECT_PAGE_SPAN_RVA = 0x0AA550
+PAGE_SPAN_READY_RVA = 0x0AA70C
 CTOR_RVA = 0x0B3460
 SETUP_RVA = 0x0B3AA0
 JOB_RVA = 0x0B3B0F
@@ -28,6 +32,11 @@ SETUP_END_RVA = 0x0B3BD7
 SETUP_HASH = "0a9a4a8f0809bd9124236e176b64245e5d59bbe8f60ecef22fe07f2cd1744a64"
 STREAM_ROUTINES = (
     ("calculate archive read pages", READ_PAGES_RVA, 0x0A5EE2, "ac77ec1cb4b1156bd5b20f5816d65b0fd811cd0ef8354741cc876f67a123ff85"),
+    ("signal I/O semaphore", 0x045B80, 0x045BA6, "5c590764d54a02d6e0d32d83fbce9169aec0dfa04d5425eca554512592e16a61"),
+    ("finish archive page read", 0x0A6B00, 0x0A6B91, "15888d763df6c95241a752d9d4c9318f98b976c2e6f9433e9f0eb4a68d02845f"),
+    ("archive read callback", READ_COMPLETE_RVA, 0x0A6C11, "25dd5f8407672eb40b6ffe2d5bd591295e340726052513d17ec757d4011bd5db"),
+    ("submit archive page read", START_IO_RVA, 0x0A6DD7, "943dac81f0b6f0dad2dd2e9faef65178ec441c4ec169088c04a5733891dbe687"),
+    ("select the ready page span", SELECT_PAGE_SPAN_RVA, PAGE_SPAN_READY_RVA, "bf6917d892b076899aad2c72626500efc52ae26788c8746834332b4d7108acd2"),
     ("query output buffer", 0x0B3290, 0x0B32E6, "019a7b60549dc457cf3fca98fe435c0bfc56ce8cc13fdd26154821017522b030"),
     ("construct stream", CTOR_RVA, 0x0B350E, "49b3c19f8fbf75af43e50227a1ee58dabcf7f3db903cf19a4d3390d37d6df721"),
     ("buffer space", 0x0B3550, 0x0B3587, "647823d1e158ed78d29f782dd30b9708dbbd9553a4d2201d7c72ec483dfd0dae"),
@@ -42,9 +51,13 @@ ALLOCATE_RVA = 0x015390
 INTERLEAVE_RVA = 0x0B32F0
 DIAGNOSTIC_SLOT_RVA = 0xE8D438
 QUERY_SLOT_RVA = 0xCA7170
+CLOCK_SLOT_RVA = 0xCA709C
+READ_SLOT_RVA = 0xCA71F4
+RELEASE_SLOT_RVA = 0xCA719C
 
 REGISTERS = ("eax", "ebx", "ecx", "edx", "esi", "edi", "ebp", "esp")
-LOW_BYTE = {"al": "eax", "bl": "ebx", "dl": "edx"}
+LOW_BYTE = {"al": "eax", "bl": "ebx", "cl": "ecx", "dl": "edx"}
+LOW_WORD = {name[1:]: name for name in REGISTERS}
 CONDITIONS = {
     "ja": "!r.carry && !r.zero",
     "jae": "!r.carry",
@@ -52,6 +65,8 @@ CONDITIONS = {
     "jbe": "r.carry || r.zero",
     "je": "r.zero",
     "jne": "!r.zero",
+    "jl": "r.sign != r.overflow",
+    "jns": "!r.sign",
 }
 TERMINATORS = {*CONDITIONS, "call", "int3", "jmp", "ret"}
 
@@ -86,9 +101,11 @@ def verified_bytes(image, sections, name, start_rva, end_rva, digest):
 
 
 def address(insn, mem):
-    if mem.segment:
+    if mem.segment and insn.reg_name(mem.segment) != "fs":
         raise ValueError(f"unexpected segment at {insn.address:#x}")
     parts = []
+    if mem.segment:
+        parts.append("m.fs_base")
     if mem.base:
         parts.append(f"r.{insn.reg_name(mem.base)}")
     if mem.index:
@@ -107,9 +124,11 @@ def value(insn, operand):
         reg = insn.reg_name(operand.reg)
         if reg in LOW_BYTE:
             return f"u32::from(r.{LOW_BYTE[reg]} as u8)"
+        if reg in LOW_WORD:
+            return f"u32::from(r.{LOW_WORD[reg]} as u16)"
         if reg in REGISTERS:
             return f"r.{reg}"
-    if operand.type == X86_OP_MEM and operand.size in (1, 4):
+    if operand.type == X86_OP_MEM and operand.size in (1, 2, 4):
         return f"m.read{operand.size * 8}({address(insn, operand.mem)})"
     raise ValueError(f"unsupported operand at {insn.address:#x}")
 
@@ -122,9 +141,12 @@ def store(insn, operand, expr):
             if expr == "0":
                 return f"{full} &= !0xff;"
             return f"{full} = ({full} & !0xff) | {expr};"
+        if reg in LOW_WORD:
+            full = f"r.{LOW_WORD[reg]}"
+            return f"{full} = ({full} & !0xffff) | (({expr}) & 0xffff);"
         if reg in REGISTERS:
             return f"r.{reg} = {expr};"
-    if operand.type == X86_OP_MEM and operand.size in (1, 4):
+    if operand.type == X86_OP_MEM and operand.size in (1, 2, 4):
         return f"m.write{operand.size * 8}({address(insn, operand.mem)}, {expr});"
     raise ValueError(f"unsupported destination at {insn.address:#x}")
 
@@ -132,15 +154,22 @@ def store(insn, operand, expr):
 def translate(insn):
     op = insn.mnemonic
     operands = insn.operands
+    if (op == "mov" and all(arg.type == X86_OP_REG for arg in operands)
+            and operands[0].reg == operands[1].reg):
+        return []
+    if op == "not":
+        return [store(insn, operands[0], f"!{value(insn, operands[0])}")]
+    if op == "leave":
+        return ["r.esp = r.ebp;", "r.ebp = m.read32(r.esp);", "r.esp += 4;"]
     if op in ("mov", "movzx"):
         return [store(insn, operands[0], value(insn, operands[1]))]
-    if op == "movq":
+    if op in ("movq", "movlpd"):
         dest, source = operands
         if dest.type == X86_OP_REG and insn.reg_name(dest.reg) == "xmm0" and source.type == X86_OP_MEM:
             return [f"r.xmm0 = m.read64({address(insn, source.mem)});"]
         if source.type == X86_OP_REG and insn.reg_name(source.reg) == "xmm0" and dest.type == X86_OP_MEM:
             return [f"m.write64({address(insn, dest.mem)}, r.xmm0);"]
-    if op == "pxor" and all(operand.type == X86_OP_REG and insn.reg_name(operand.reg) == "xmm0"
+    if op in ("pxor", "xorpd") and all(operand.type == X86_OP_REG and insn.reg_name(operand.reg) == "xmm0"
                             for operand in operands):
         return ["r.xmm0 = 0;"]
     if op == "lea":
@@ -148,8 +177,8 @@ def translate(insn):
             return []
         return [store(insn, operands[0], address(insn, operands[1].mem))]
     if op == "push":
-        return ["r.esp = r.esp.wrapping_sub(4);",
-                f"m.write32(r.esp, {value(insn, operands[0])});"]
+        return [f"let pushed = {value(insn, operands[0])};",
+                "r.esp = r.esp.wrapping_sub(4);", "m.write32(r.esp, pushed);"]
     if op == "pop":
         return [store(insn, operands[0], "m.read32(r.esp)"),
                 "r.esp = r.esp.wrapping_add(4);"]
@@ -158,6 +187,8 @@ def translate(insn):
         return [f"if !r.carry {{ {assignment} }}"]
     if op == "setb":
         return [store(insn, operands[0], "u32::from(r.carry)")]
+    if op == "setne":
+        return [store(insn, operands[0], "u32::from(!r.zero)")]
     if op in ("inc", "dec"):
         lhs = value(insn, operands[0])
         method = "wrapping_add" if op == "inc" else "wrapping_sub"
@@ -168,6 +199,11 @@ def translate(insn):
         method = "overflowing_add" if op == "add" else "overflowing_sub"
         lines = [f"let (result, carry) = {lhs}.{method}({rhs});",
                  "r.carry = carry;", "r.zero = result == 0;"]
+        sign_bit = 1 << (operands[0].size * 8 - 1)
+        # Signed comparisons use SF/OF from the operand width, including word compares.
+        if op == "cmp":
+            lines += [f"r.sign = (result & {sign_bit:#x}) != 0;",
+                      f"r.overflow = (({lhs} ^ {rhs}) & ({lhs} ^ result) & {sign_bit:#x}) != 0;"]
         if op != "cmp":
             lines.append(store(insn, operands[0], "result"))
         return lines
@@ -183,25 +219,30 @@ def translate(insn):
                 f"let (result, carry) = result.{method}(u32::from(r.carry));",
                 "r.carry = first_carry || carry;", "r.zero = result == 0;",
                 store(insn, operands[0], "result")]
-    if op == "shrd" and operands[0].size == 4 and operands[2].type == X86_OP_IMM:
+    if op in ("shrd", "shld") and operands[0].size == 4 and operands[2].type == X86_OP_IMM:
         lhs, rhs, _ = (value(insn, operand) for operand in operands)
         count = operands[2].imm & 31
         if count == 0:
             return []
-        return [f"let result = ({lhs} >> {count}) | ({rhs} << {32 - count});",
-                f"r.carry = ({lhs} & {1 << (count - 1):#x}) != 0;", "r.zero = result == 0;",
+        primary, secondary = (">>", "<<") if op == "shrd" else ("<<", ">>")
+        carry_bit = count - 1 if op == "shrd" else 32 - count
+        return [f"let result = ({lhs} {primary} {count}) | ({rhs} {secondary} {32 - count});",
+                f"r.carry = ({lhs} & {1 << carry_bit:#x}) != 0;", "r.zero = result == 0;",
                 store(insn, operands[0], "result")]
     if op in ("and", "or", "xor", "test"):
         lhs, rhs = (value(insn, operand) for operand in operands)
         symbol = {"and": "&", "or": "|", "xor": "^", "test": "&"}[op]
         if op == "xor" and lhs == rhs:
-            return ["r.carry = false;", "r.zero = true;", store(insn, operands[0], "0")]
+            return ["r.carry = false;", "r.zero = true;", "r.sign = false;",
+                    "r.overflow = false;", store(insn, operands[0], "0")]
         expr = lhs if lhs == rhs else f"{lhs} {symbol} {rhs}"
-        lines = [f"let result = {expr};", "r.carry = false;", "r.zero = result == 0;"]
+        sign_bit = 1 << (operands[0].size * 8 - 1)
+        lines = [f"let result = {expr};", "r.carry = false;", "r.zero = result == 0;",
+                 f"r.sign = (result & {sign_bit:#x}) != 0;", "r.overflow = false;"]
         if op != "test":
             lines.append(store(insn, operands[0], "result"))
         return lines
-    if op in ("shl", "shr") and operands[0].size == 4 and operands[1].type == X86_OP_IMM:
+    if op in ("shl", "shr", "sar") and operands[0].size == 4 and operands[1].type == X86_OP_IMM:
         lhs = value(insn, operands[0])
         count = operands[1].imm & 31
         if count == 0:
@@ -209,10 +250,12 @@ def translate(insn):
         operator = "<<" if op == "shl" else ">>"
         carry_bit = 32 - count if op == "shl" else count - 1
         carry = f"({lhs} >> {carry_bit})" if carry_bit else lhs
+        result = (f"(({lhs} as i32) >> {count}) as u32" if op == "sar"
+                  else f"{lhs} {operator} {count}")
         return [f"r.carry = ({carry} & 1) != 0;",
-                f"let result = {lhs} {operator} {count};", "r.zero = result == 0;",
+                f"let result = {result};", "r.zero = result == 0;",
                 store(insn, operands[0], "result")]
-    if op == "prefetcht0":
+    if op in ("nop", "prefetcht0"):
         return []
     raise ValueError(f"unsupported instruction {op} at {insn.address:#x}")
 
@@ -222,6 +265,21 @@ def disassemble(decoder, body, address):
     if sum(insn.size for insn in instructions) != len(body):
         raise ValueError(f"incomplete disassembly at {address:#x}")
     return instructions
+
+
+def validate_signed_branches(instructions):
+    """Reject signed branches whose flag producer is not modeled."""
+    instructions = list(instructions)
+    by_end = {insn.address + insn.size: insn for insn in instructions}
+    direct_targets = {insn.operands[0].imm for insn in instructions
+                      if (insn.mnemonic in TERMINATORS and insn.operands
+                          and insn.mnemonic != 'ret' and insn.operands[0].type == X86_OP_IMM)}
+    for insn in instructions:
+        if insn.mnemonic in ('jl', 'jns'):
+            previous = by_end.get(insn.address)
+            producers = ('cmp',) if insn.mnemonic == 'jl' else ('test',)
+            if previous is None or previous.mnemonic not in producers or insn.address in direct_targets:
+                raise ValueError(f'unsupported signed flag producer at {insn.address:#x}')
 
 
 def generate(image):
@@ -235,6 +293,16 @@ def generate(image):
     job = base + JOB_RVA
     diagnostic_slot = base + DIAGNOSTIC_SLOT_RVA
     query_slot = base + QUERY_SLOT_RVA
+    clock_slot = base + CLOCK_SLOT_RVA
+    read_slot = base + READ_SLOT_RVA
+    release_slot = base + RELEASE_SLOT_RVA
+    span_ready = base + PAGE_SPAN_READY_RVA
+    imports = {
+        query_slot: (3, "query_memory"),
+        clock_slot: (1, "query_counter"),
+        read_slot: (5, "submit_archive_read"),
+        release_slot: (3, "release_io_semaphore"),
+    }
     caller_code = verified_bytes(image, sections, "caller", CALLER_RVA, CALLER_END_RVA, CALLER_HASH)
     decoder_body = verified_bytes(image, sections, "decoder", DECODER_RVA,
                                   TABLE_RVA + 4 * TABLE_SIZE, DECODER_HASH)
@@ -253,6 +321,7 @@ def generate(image):
     instructions.extend(disassemble(decoder, setup[:JOB_RVA - SETUP_RVA], base + SETUP_RVA))
     instructions.extend(disassemble(decoder, setup[SYNC_RVA - SETUP_RVA:], base + SYNC_RVA))
     starts.add(base + SETUP_RVA)
+    validate_signed_branches(instructions)
     addresses = {insn.address for insn in instructions}
     for insn in instructions:
         following = insn.address + insn.size
@@ -264,7 +333,7 @@ def generate(image):
                 raise ValueError("unexpected computed jump")
         elif insn.mnemonic == "call" and insn.operands[0].type == X86_OP_MEM:
             mem = insn.operands[0].mem
-            if mem.base or mem.index or mem.disp not in (diagnostic_slot, query_slot):
+            if mem.base or mem.index or (mem.disp != diagnostic_slot and mem.disp not in imports):
                 raise ValueError("unexpected indirect call")
         elif insn.mnemonic in ("call", "jmp") or insn.mnemonic in CONDITIONS:
             if insn.operands[0].type != X86_OP_IMM:
@@ -272,7 +341,7 @@ def generate(image):
             dest = insn.operands[0].imm
             if insn.mnemonic != "call" or dest not in (copy, allocate, interleave):
                 starts.add(dest)
-    if not starts <= addresses:
+    if not starts <= addresses | {span_ready}:
         raise ValueError("a branch target is outside the decoded functions")
 
     blocks = {}
@@ -284,7 +353,7 @@ def generate(image):
     yield "// Derived locally from the verified U5.1 executable by lift.py."
     yield "use super::Memory;"
     yield "#[derive(Default)]"
-    yield "struct Registers { " + ", ".join(f"{reg}: u32" for reg in REGISTERS) + ", xmm0: u64, carry: bool, zero: bool }"
+    yield "struct Registers { " + ", ".join(f"{reg}: u32" for reg in REGISTERS) + ", xmm0: u64, carry: bool, zero: bool, sign: bool, overflow: bool }"
     yield f"const LITERAL_TARGETS: [u32; {TABLE_SIZE}] = ["
     for target in jump_targets:
         yield f"    {target:#x},"
@@ -294,12 +363,20 @@ def generate(image):
     yield f"pub(super) const CTOR: u32 = {base + CTOR_RVA:#x};"
     yield f"pub(super) const SETUP: u32 = {base + SETUP_RVA:#x};"
     yield f"pub(super) const READ_PAGES: u32 = {base + READ_PAGES_RVA:#x};"
+    yield f"pub(super) const START_IO: u32 = {base + START_IO_RVA:#x};"
+    yield f"pub(super) const READ_COMPLETE: u32 = {base + READ_COMPLETE_RVA:#x};"
+    yield f"pub(super) const SELECT_PAGE_SPAN: u32 = {base + SELECT_PAGE_SPAN_RVA:#x};"
     yield "pub(super) fn run(m: &mut Memory, stack: u32, start: u32, ecx: u32) -> u32 {"
     yield "    let mut r = Registers { esp: stack, ecx, ..Registers::default() };"
     yield "    let mut block = start;"
     yield "    loop {"
     yield "        match block {"
     yield "            0 => return r.eax,"
+    # At this checkpoint LoadBufferIntoOp has selected the half-open guest span.
+    yield f"            {span_ready:#x} => {{"
+    yield "                m.selected_span = Some((r.edi, r.esi));"
+    yield "                return 1;"
+    yield "            }"
     yield f"            {copy:#x} => {{"
     yield "                let dest = m.read32(r.esp + 4);"
     yield "                m.move_bytes(dest, m.read32(r.esp + 8), m.read32(r.esp + 12));"
@@ -334,10 +411,13 @@ def generate(image):
             yield "                m.unsupported = true;"
             yield "                return 0;"
         elif tail.mnemonic == "call" and tail.operands[0].type == X86_OP_MEM:
-            if tail.operands[0].mem.disp == query_slot:
-                # stdcall consumes the three arguments; the continuation is fixed.
-                yield "                r.eax = m.query_memory(m.read32(r.esp), m.read32(r.esp + 4), m.read32(r.esp + 8));"
-                yield "                r.esp += 12;"
+            slot = tail.operands[0].mem.disp
+            if slot in imports:
+                # The stdcall import consumes its arguments at the fixed continuation.
+                num_args, method = imports[slot]
+                args = ["m.read32(r.esp)"] + [f"m.read32(r.esp + {n * 4})" for n in range(1, num_args)]
+                yield f"                r.eax = m.{method}({', '.join(args)});"
+                yield f"                r.esp += {num_args * 4};"
                 yield f"                block = {tail.address + tail.size:#x};"
             else:
                 yield "                m.unsupported = true;"
@@ -374,12 +454,16 @@ def main():
     args = parser.parse_args()
     target = Path(__file__).resolve().parent / "src" / "lifted.rs"
     try:
-        source = "\n".join(generate(args.executable.read_bytes())) + "\n"
+        image = args.executable.read_bytes()
+        source = "\n".join(generate(image)) + "\n"
+        from startup_lift import generate_startup
+        startup = generate_startup(image)
+        target.with_name("startup_lifted.rs").write_text(startup, encoding="utf-8")
         with target.open("w", encoding="utf-8", newline="\n") as output:
             output.write(source)
     except (OSError, StructError, ValueError) as error:
         parser.exit(1, f"[Error] {error}\n")
-    print("Generated src/lifted.rs from twelve x86 routines and 32 jump targets.")
+    print("Generated src/lifted.rs from 17 x86 code regions and 32 jump targets.")
 
 
 if __name__ == "__main__":

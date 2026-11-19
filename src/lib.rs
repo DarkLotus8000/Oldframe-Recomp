@@ -1,6 +1,7 @@
 //! A callable build of the U5.1 x86 cache decoder and stream routines.
 
 pub mod archive;
+pub mod startup;
 mod lifted;
 
 const STACK: u32 = 0x80;
@@ -24,6 +25,9 @@ struct Memory {
     bytes: Vec<u8>,
     decoded_lengths: Vec<u32>,
     scratch_allocated: bool,
+    pending_read: Option<archive::PageRequest>,
+    completion_signaled: bool,
+    selected_span: Option<(u32, u32)>,
     unsupported: bool,
 }
 
@@ -33,6 +37,9 @@ impl Memory {
             bytes: vec![0; size],
             decoded_lengths: Vec::new(),
             scratch_allocated: false,
+            pending_read: None,
+            completion_signaled: false,
+            selected_span: None,
             unsupported: false,
         }
     }
@@ -99,6 +106,18 @@ impl Memory {
             self.write32(info + index as u32 * 4, value);
         }
         INFO_SIZE
+    }
+
+    fn query_counter(&mut self, addr: u32) -> u32 {
+        if self
+            .bytes
+            .get(addr as usize..)
+            .is_none_or(|bytes| bytes.len() < 8)
+        {
+            return 0;
+        }
+        self.write64(addr, 0);
+        1
     }
 }
 

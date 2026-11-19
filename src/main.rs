@@ -1,60 +1,56 @@
 mod cache;
+mod preview;
+#[cfg(windows)]
+mod window;
 
 use std::error::Error;
 use std::fs::{self, File};
-use std::io::{self, BufReader, Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::io::{self, BufReader};
+use std::path::Path;
 use std::process::ExitCode;
-use warframe_u51_decoder_recomp::archive::{plan_read, PAGE_SIZE};
+use warframe_u51_decoder_recomp::archive::plan_read;
 use warframe_u51_decoder_recomp::{decode_entry, FrameCounts};
 
-fn read_planned_entry(archive: &mut BufReader<File>, entry: &cache::Entry) -> io::Result<Vec<u8>> {
+fn read_entry(
+    archive: &mut BufReader<File>,
+    entry: &cache::Entry,
+) -> io::Result<(Vec<u8>, FrameCounts)> {
     let plan = plan_read(entry.offset, entry.packed_size, entry.size).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!("read planner rejected {}", entry.path),
         )
     })?;
-    let mut bytes = vec![0; plan.bytes as usize];
-    let end = plan.offset + plan.bytes;
-    archive.seek(SeekFrom::Start(plan.offset))?;
-    for page in plan.first_page..=plan.last_page {
-        let page_start = page * PAGE_SIZE;
-        let start = page_start.max(plan.offset) - plan.offset;
-        let stop = page_start.saturating_add(PAGE_SIZE).min(end) - plan.offset;
-        archive.read_exact(&mut bytes[start as usize..stop as usize])?;
-    }
-    Ok(bytes)
-}
-
-fn compare_entry(archive: &mut BufReader<File>, entry: &cache::Entry) -> io::Result<FrameCounts> {
-    let mut expected = Vec::new();
-    cache::extract(archive, entry, &mut expected)?;
-    let packed = read_planned_entry(archive, entry)?;
-
-    let (output, stats) = if entry.packed_size == entry.size {
-        (
+    let packed = plan.read_from(archive)?;
+    if entry.packed_size == entry.size {
+        return Ok((
             packed,
             FrameCounts {
                 compressed: 0,
                 stored: 0,
             },
+        ));
+    }
+    let mut output = vec![0; entry.size as usize];
+    let stats = decode_entry(&packed, &mut output).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("stream rejected {}", entry.path),
         )
-    } else {
-        let mut output = vec![0; expected.len()];
-        let stats = decode_entry(&packed, &mut output).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("stream rejected {}", entry.path),
-            )
-        })?;
-        (output, stats)
-    };
-    if let Some(offset) = output
-        .iter()
-        .zip(&expected)
-        .position(|(actual, expected)| actual != expected)
-    {
+    })?;
+    Ok((output, stats))
+}
+
+fn compare_entry(archive: &mut BufReader<File>, entry: &cache::Entry) -> io::Result<FrameCounts> {
+    let mut expected = Vec::new();
+    cache::extract(archive, entry, &mut expected)?;
+    let (output, stats) = read_entry(archive, entry)?;
+    if output != expected {
+        let offset = output
+            .iter()
+            .zip(&expected)
+            .position(|(a, b)| a != b)
+            .unwrap_or_else(|| output.len().min(expected.len()));
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
@@ -66,9 +62,16 @@ fn compare_entry(archive: &mut BufReader<File>, entry: &cache::Entry) -> io::Res
     Ok(stats)
 }
 
-fn compare_caches(input: &Path) -> Result<(), Box<dyn Error>> {
+fn cache_folder(input: &Path) -> std::path::PathBuf {
     let nested = input.join("Cache.Windows");
-    let folder = if nested.is_dir() { &nested } else { input };
+    if nested.is_dir() {
+        nested
+    } else {
+        input.to_path_buf()
+    }
+}
+
+fn compare_caches(folder: &Path) -> Result<(), Box<dyn Error>> {
     let mut tables = Vec::new();
     for dir_entry in fs::read_dir(folder)? {
         let path = dir_entry?.path();
@@ -127,11 +130,37 @@ fn compare_caches(input: &Path) -> Result<(), Box<dyn Error>> {
 }
 
 fn main() -> ExitCode {
-    let Some(input) = std::env::args_os().nth(1) else {
-        eprintln!("Usage: cargo run --release -- <Warframe folder or Cache.Windows>");
-        return ExitCode::from(2);
+    let mut args = std::env::args_os().skip(1);
+    let usage = || {
+        eprintln!("Usage: warframe-u51-decoder-recomp <Warframe folder or Cache.Windows> [--window | --asset-info | --startup]");
+        ExitCode::from(2)
     };
-    match compare_caches(&PathBuf::from(input)) {
+    let Some(input) = args.next() else {
+        return usage();
+    };
+    let mode = args.next();
+    if args.next().is_some() {
+        return usage();
+    }
+    let folder = cache_folder(Path::new(&input));
+    let result = match mode.as_deref().and_then(|arg| arg.to_str()) {
+        Some("--startup") => warframe_u51_decoder_recomp::startup::run_checkpoints().map_err(Into::into),
+        None if mode.is_none() => compare_caches(&folder),
+        Some("--asset-info") => preview::load(&folder).map(|_| ()).map_err(Into::into),
+        #[cfg(windows)]
+        Some("--window") => preview::load(&folder)
+            .and_then(window::show)
+            .map_err(Into::into),
+        #[cfg(not(windows))]
+        Some("--window") => {
+            eprintln!(
+                "[Error] --window requires Windows. Use --asset-info to check the texture here."
+            );
+            return ExitCode::FAILURE;
+        }
+        _ => return usage(),
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("[Error] {error}");

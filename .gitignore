@@ -1,2 +1,6 @@
 /target/
 /src/lifted.rs
+
+/src/startup_lifted.rs
+/src/startup_data.bin
+/__pycache__/
