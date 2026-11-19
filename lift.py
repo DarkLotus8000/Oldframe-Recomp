@@ -65,6 +65,7 @@ CONDITIONS = {
     "jbe": "r.carry || r.zero",
     "je": "r.zero",
     "jne": "!r.zero",
+    "jge": "r.sign == r.overflow",
     "jl": "r.sign != r.overflow",
     "jns": "!r.sign",
 }
@@ -163,15 +164,39 @@ def translate(insn):
         return ["r.esp = r.ebp;", "r.ebp = m.read32(r.esp);", "r.esp += 4;"]
     if op in ("mov", "movzx"):
         return [store(insn, operands[0], value(insn, operands[1]))]
+    if op == "movsx":
+        source = value(insn, operands[1])
+        cast = "i8" if operands[1].size == 1 else "i16"
+        return [store(insn, operands[0], f"({source} as {cast}) as i32 as u32")]
     if op in ("movq", "movlpd"):
         dest, source = operands
         if dest.type == X86_OP_REG and insn.reg_name(dest.reg) == "xmm0" and source.type == X86_OP_MEM:
-            return [f"r.xmm0 = m.read64({address(insn, source.mem)});"]
+            return [f"r.xmm0 = m.read64({address(insn, source.mem)}) as _;"]
         if source.type == X86_OP_REG and insn.reg_name(source.reg) == "xmm0" and dest.type == X86_OP_MEM:
-            return [f"m.write64({address(insn, dest.mem)}, r.xmm0);"]
-    if op in ("pxor", "xorpd") and all(operand.type == X86_OP_REG and insn.reg_name(operand.reg) == "xmm0"
+            return [f"m.write64({address(insn, dest.mem)}, r.xmm0 as u64);"]
+    if op == "movaps":
+        dest, source = operands
+        if dest.type == X86_OP_REG and insn.reg_name(dest.reg) == "xmm0" and source.type == X86_OP_MEM:
+            return [f"r.xmm0 = m.read128({address(insn, source.mem)});"]
+        if source.type == X86_OP_REG and insn.reg_name(source.reg) == "xmm0" and dest.type == X86_OP_MEM:
+            return [f"m.write128({address(insn, dest.mem)}, r.xmm0);"]
+    if op == "movss":
+        dest, source = operands
+        if dest.type == X86_OP_REG and insn.reg_name(dest.reg) == "xmm0" and source.type == X86_OP_MEM:
+            return [f"r.xmm0 = m.read32({address(insn, source.mem)}) as _;"]
+        if source.type == X86_OP_REG and insn.reg_name(source.reg) == "xmm0" and dest.type == X86_OP_MEM:
+            return [f"m.write32({address(insn, dest.mem)}, r.xmm0 as u32);"]
+    if op == "mulss" and insn.reg_name(operands[0].reg) == "xmm0" and operands[1].type == X86_OP_MEM:
+        rhs = address(insn, operands[1].mem)
+        return [f"let product = f32::from_bits(r.xmm0 as u32) * f32::from_bits(m.read32({rhs}));",
+                "r.xmm0 = u64::from(product.to_bits()) as _;"]
+    if op in ("pxor", "xorpd", "xorps") and all(operand.type == X86_OP_REG and insn.reg_name(operand.reg) == "xmm0"
                             for operand in operands):
         return ["r.xmm0 = 0;"]
+    if op == "shufps" and len(operands) == 3 and operands[2].imm == 0 and all(
+            operand.type == X86_OP_REG and insn.reg_name(operand.reg) == "xmm0" for operand in operands[:2]):
+        return ["let lane = r.xmm0 as u32 as u128;",
+                "r.xmm0 = lane | (lane << 32) | (lane << 64) | (lane << 96);"]
     if op == "lea":
         if operands[1].mem.base == operands[0].reg and not operands[1].mem.index and not operands[1].mem.disp:
             return []
@@ -189,6 +214,8 @@ def translate(insn):
         return [store(insn, operands[0], "u32::from(r.carry)")]
     if op == "setne":
         return [store(insn, operands[0], "u32::from(!r.zero)")]
+    if op == "sete":
+        return [store(insn, operands[0], "u32::from(r.zero)")]
     if op in ("inc", "dec"):
         lhs = value(insn, operands[0])
         method = "wrapping_add" if op == "inc" else "wrapping_sub"
@@ -275,9 +302,9 @@ def validate_signed_branches(instructions):
                       if (insn.mnemonic in TERMINATORS and insn.operands
                           and insn.mnemonic != 'ret' and insn.operands[0].type == X86_OP_IMM)}
     for insn in instructions:
-        if insn.mnemonic in ('jl', 'jns'):
+        if insn.mnemonic in ('jge', 'jl', 'jns'):
             previous = by_end.get(insn.address)
-            producers = ('cmp',) if insn.mnemonic == 'jl' else ('test',)
+            producers = ('cmp',) if insn.mnemonic in ('jge', 'jl') else ('test',)
             if previous is None or previous.mnemonic not in producers or insn.address in direct_targets:
                 raise ValueError(f'unsupported signed flag producer at {insn.address:#x}')
 

@@ -30,6 +30,7 @@ struct Memory {
     thread_set_success: bool,
     allocation_fail_at: usize,
     stdio_variant: u32,
+    environment_variant: u32,
 }
 impl Memory {
     fn read8(&self, addr: u32) -> u32 {
@@ -57,6 +58,12 @@ impl Memory {
     }
     fn write32(&mut self, addr: u32, value: u32) {
         self.bytes[addr as usize..addr as usize + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    fn read128(&self, addr: u32) -> u128 {
+        u128::from_le_bytes(self.bytes[addr as usize..addr as usize + 16].try_into().unwrap())
+    }
+    fn write128(&mut self, addr: u32, value: u128) {
+        self.bytes[addr as usize..addr as usize + 16].copy_from_slice(&value.to_le_bytes());
     }
     fn import(&mut self, slot: u32, stack: u32) -> Result<u32, String> {
         self.calls.push(slot);
@@ -169,6 +176,22 @@ impl Memory {
                 Ok(u32::from(self.tls_success))
             }
             0x10a7284 | 0x10a7288 => Ok(self.read32(stack) ^ 0xa5a55a5a),
+            0xf26500 => Ok(1),
+            0xf18111 => Ok(0),
+            0x10a7308 => Ok(1),
+            0x10a7160 => Ok(0),
+            0xf23cff => Ok(128),
+            0xf1abc0 => {
+                let ptr = self.read32(stack);
+                let needle = self.read32(stack + 4) as u8;
+                let start = ptr as usize;
+                let len = self.bytes[start..].iter().position(|byte| *byte == 0)
+                    .ok_or("unterminated strrchr input")?;
+                Ok(self.bytes[start..start + len].iter().rposition(|byte| *byte == needle)
+                    .map(|offset| ptr + offset as u32).unwrap_or(0))
+            }
+            0x423280 => Ok(0x131a960),
+            0x423730 => Ok(self.read32(stack)),
             0x50000 => {
                 if self.read32(stack) != 0xf22d03 {
                     return Err("unexpected FLS cleanup callback".into());
@@ -210,7 +233,8 @@ impl Memory {
                 Ok(0)
             }
             0x10a7328 => {
-                if self.read32(stack) != self.heap_result || self.read32(stack + 4) != 8 {
+                let flags = self.read32(stack + 4);
+                if self.read32(stack) != self.heap_result || ![0, 8].contains(&flags) {
                     return Err("unexpected HeapAlloc handle or flags".into());
                 }
                 self.allocation_calls += 1;
@@ -225,7 +249,9 @@ impl Memory {
                 if end > 0x100000 {
                     return Err("guest heap arena exhausted".into());
                 }
-                self.bytes[ptr as usize..end as usize].fill(0);
+                if flags & 8 != 0 {
+                    self.bytes[ptr as usize..end as usize].fill(0);
+                }
                 self.heap_next = (end + 15) & !15;
                 Ok(ptr)
             }
@@ -264,6 +290,72 @@ impl Memory {
                 }
                 Ok(32)
             }
+            0x10a7278 => Ok(0x18000),
+            0x10a72e4 => Ok(if self.environment_variant == 1 { 0 } else { 0x18100 }),
+            0x10a72c4 => {
+                let args = (0..8).map(|n| self.read32(stack + 4 * n)).collect::<Vec<_>>();
+                if args[0] != 0 || args[1] != 0 || args[2] != 0x18100
+                    || args[3] != 13 || args[6] != 0 || args[7] != 0
+                {
+                    return Err(format!("unexpected WideCharToMultiByte arguments {args:?}"));
+                }
+                if self.environment_variant == 2 {
+                    return Ok(0);
+                }
+                let converted = b"A=B\0LANG=ru\0\0";
+                if args[4] != 0 {
+                    if args[5] < converted.len() as u32 {
+                        return Ok(0);
+                    }
+                    let start = args[4] as usize;
+                    self.bytes[start..start + converted.len()].copy_from_slice(converted);
+                }
+                Ok(converted.len() as u32)
+            }
+            0x10a72e0 => {
+                if self.read32(stack) != 0x18100 {
+                    return Err("unexpected environment block token".into());
+                }
+                Ok(1)
+            }
+            0x10a72dc => {
+                if self.read32(stack) != 0 || self.read32(stack + 4) != 0x1358b60
+                    || self.read32(stack + 8) != 0x104
+                {
+                    return Err("unexpected GetModuleFileNameA arguments".into());
+                }
+                let name = b"Warframe.exe\0";
+                self.bytes[0x1358b60..0x1358b60 + name.len()].copy_from_slice(name);
+                Ok((name.len() - 1) as u32)
+            }
+            0xf25852 => {
+                self.write32(0x1359dac, 1);
+                Ok(0)
+            }
+            0xf30820 => Ok(0),
+            0xf26890 => {
+                let ptr = self.read32(stack) as usize;
+                let length = self.bytes[ptr..].iter().position(|byte| *byte == 0)
+                    .ok_or("unterminated strlen input")?;
+                Ok(length as u32)
+            }
+            0xf28c15 => {
+                let destination = self.read32(stack);
+                let size = self.read32(stack + 4);
+                let source = self.read32(stack + 8);
+                if size == 0 {
+                    return Ok(22);
+                }
+                let start = source as usize;
+                let length = self.bytes[start..].iter().position(|byte| *byte == 0)
+                    .ok_or("unterminated copy input")? + 1;
+                if length > size as usize {
+                    return Ok(34);
+                }
+                self.bytes.copy_within(start..start + length, destination as usize);
+                Ok(0)
+            }
+            0xf1f0dc => Ok(0),
             0x10a71a4 => {
                 let ptr = self.read32(stack);
                 if self.read32(stack + 4) != 4000 {
@@ -311,6 +403,7 @@ pub fn checkpoint(initial: u32, entropy: u32) -> Result<(u32, u32, u32, Vec<u32>
         thread_set_success: true,
         allocation_fail_at: usize::MAX,
         stdio_variant: 0,
+        environment_variant: 0,
     };
     m.write32(COOKIE, initial);
     m.write32(COOKIE + 4, 0xdeadbeef);
@@ -339,6 +432,19 @@ pub fn run_checkpoints() -> Result<(), String> {
     }
     run_seh_checkpoints()?;
     run_runtime_checkpoints()?;
+    run_environment_checkpoints()?;
+    run_argv_checkpoints()?;
+    run_envp_checkpoints()?;
+    run_cinit_checkpoints()?;
+    run_preinitializer_checkpoints()?;
+    run_atexit_checkpoints()?;
+    run_constructor_checkpoints()?;
+    run_constructor_two_checkpoints()?;
+    run_constructor_three_checkpoints()?;
+    run_constructor_four_checkpoints()?;
+    run_constructor_eight_checkpoints()?;
+    run_constructor_nine_checkpoints()?;
+    run_constructor_twelve_checkpoints()?;
     run_allocator_checkpoints()?;
     run_locale_checkpoints()?;
     Ok(())
@@ -370,6 +476,7 @@ fn seh_memory(variant: u32, previous: u32) -> Memory {
         thread_set_success: true,
         allocation_fail_at: usize::MAX,
         stdio_variant: 0,
+        environment_variant: 0,
     };
     m.bytes[0x400000..0x400000 + translated::PE_HEADERS.len()]
         .copy_from_slice(translated::PE_HEADERS);
@@ -382,7 +489,8 @@ fn seh_memory(variant: u32, previous: u32) -> Memory {
     m.write32(m.fs_base, previous);
     m.write32(0x1359dbc, variant & 1);
     for slot in [
-        0x10a70a8, 0x10a72ec, 0x10a72f0, 0x10a72f4, 0x10a7284, 0x10a7288, 0x10a72f8,
+        0x10a70a8, 0x10a72ec, 0x10a72f0, 0x10a72f4, 0x10a7284, 0x10a7288,
+        0x10a72f8, 0x10a72c4,
     ] {
         m.write32(slot, slot);
     }
@@ -395,7 +503,216 @@ fn seh_memory(variant: u32, previous: u32) -> Memory {
         5 => m.write32(pe + 0xe8, 0x1000),
         _ => (),
     }
+    let command = b"Warframe.exe -language:ru -fullscreen:0\0";
+    m.bytes[0x18000..0x18000 + command.len()].copy_from_slice(command);
+    for (index, word) in "A=B\0LANG=ru\0\0".encode_utf16().enumerate() {
+        m.write16(0x18100 + index as u32 * 2, word as u32);
+    }
     m
+}
+
+fn run_environment_checkpoints() -> Result<(), String> {
+    for variant in 0..2 {
+        let mut m = seh_memory(0, 0xffffffff);
+        m.heap_result = 0x60000;
+        m.environment_variant = variant;
+        translated::run(&mut m, 0xf17c9d)?;
+        let environment = m.read32(0x1358030);
+        let data = if environment == 0 {
+            String::new()
+        } else {
+            m.bytes[environment as usize..environment as usize + 13]
+                .iter().map(|b| format!("{b:02x}")).collect::<String>()
+        };
+        println!("STARTUP_ENVIRONMENT_READY variant={variant:08x} stop=00f17c9d stack={:08x} frame={:08x} eax={:08x} command={:08x} environment={environment:08x} next={:08x} data={data} calls={}",
+            m.stack, m.frame, m.eax, m.read32(0x1359db8), m.heap_next,
+            m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    }
+    Ok(())
+}
+
+fn run_argv_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0xf17cae)?;
+    let argc = m.read32(0x135806c);
+    let argv = m.read32(0x1358070);
+    let pointers = (0..argc + 1)
+        .map(|index| m.read32(argv + index * 4))
+        .map(|value| format!("{value:08x}"))
+        .collect::<Vec<_>>().join(",");
+    let data = m.bytes[argv as usize..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_ARGV_READY stop=00f17cae stack={:08x} frame={:08x} eax={:08x} argc={argc:08x} argv={argv:08x} next={:08x} pointers={pointers} data={data} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_envp_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0xf17cbf)?;
+    let envp = m.read32(0x1358078);
+    let pointers = (0..3).map(|index| m.read32(envp + index * 4))
+        .map(|value| format!("{value:08x}"))
+        .collect::<Vec<_>>().join(",");
+    let data = m.bytes[envp as usize..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_ENVP_READY stop=00f17cbf stack={:08x} frame={:08x} eax={:08x} envp={envp:08x} initialized={:08x} next={:08x} pointers={pointers} data={data} calls={}",
+        m.stack, m.frame, m.eax, m.read32(0x1359da0), m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_cinit_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0xf207b3)?;
+    let pointers = (0..10)
+        .map(|index| m.read32(0x1310ef8 + index * 4))
+        .map(|value| format!("{value:08x}"))
+        .collect::<Vec<_>>().join(",");
+    println!("STARTUP_CINIT_POINTERS_READY stop=00f207b3 stack={:08x} frame={:08x} eax={:08x} pointers={pointers} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_preinitializer_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0xf207c4)?;
+    let fields = [0x135ade0, 0x1359dc0, 0x1359da8, 0x1359da4,
+                  0x1358040, 0x1358044, 0x1359c84, 0x1359c7c, 0x1359dac]
+        .iter().map(|addr| m.read32(*addr))
+        .map(|value| format!("{value:08x}"))
+        .collect::<Vec<_>>().join(",");
+    let table = m.read32(0x1359dc0);
+    let count = m.read32(0x135ade0);
+    let data = m.bytes[table as usize..table as usize + count as usize * 4]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_PREINITIALIZERS_READY stop=00f207c4 stack={:08x} frame={:08x} eax={:08x} next={:08x} fields={fields} data={data} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_atexit_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0xf207d4)?;
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let data = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_ATEXIT_READY stop=00f207d4 stack={:08x} frame={:08x} eax={:08x} begin={begin:08x} end={end:08x} encoded_begin={:08x} encoded_end={:08x} data={data} calls={}",
+        m.stack, m.frame, m.eax, m.read32(0x1359da8), m.read32(0x1359da4),
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x10670f0)?;
+    println!("STARTUP_CONSTRUCTOR_001_READY stop=010670f0 stack={:08x} frame={:08x} eax={:08x} lhs={:08x} rhs={:08x} result={:08x} calls={}",
+        m.stack, m.frame, m.eax, m.read32(0x128b0fc), m.read32(0x10a9cc8),
+        m.read32(0x1316330),
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_two_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067120)?;
+    let object = m.bytes[0x1316334..0x1316341]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_002_READY stop=01067120 stack={:08x} frame={:08x} eax={:08x} object={object} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_three_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067150)?;
+    let object = m.bytes[0x1316344..0x1316351]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_003_READY stop=01067150 stack={:08x} frame={:08x} eax={:08x} object={object} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_four_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067180)?;
+    let object = m.bytes[0x1316358..0x13163dc]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_004_READY stop=01067180 stack={:08x} frame={:08x} eax={:08x} pool={:08x} object={object} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.read32(0x131a9e0),
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_eight_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067260)?;
+    let objects = m.bytes[0x13163e0..0x13165d0]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_008_READY stop=01067260 stack={:08x} frame={:08x} eax={:08x} objects={objects} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_nine_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067270)?;
+    let object = m.bytes[0x13165d0..0x1316610]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_009_READY stop=01067270 stack={:08x} frame={:08x} eax={:08x} object={object} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_twelve_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x10672e0)?;
+    let objects = m.bytes[0x1316618..0x1316924]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_012_READY stop=010672e0 stack={:08x} frame={:08x} eax={:08x} objects={objects} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
 }
 
 fn run_seh_checkpoints() -> Result<(), String> {

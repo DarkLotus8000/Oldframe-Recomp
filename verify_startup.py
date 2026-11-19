@@ -8,11 +8,11 @@ from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
 from unicorn.x86_const import (UC_X86_REG_ESP, UC_X86_REG_EIP, UC_X86_REG_EAX,
                               UC_X86_REG_EBP, UC_X86_REG_FS, UC_X86_REG_GDTR,
                               UC_X86_REG_CS, UC_X86_REG_DS, UC_X86_REG_SS, UC_X86_REG_ES)
-from startup_lift import ENTRY, CHECKPOINT, PE_READY, COOKIE, IMPORTS, DIGEST
+from startup_lift import ENTRY, CHECKPOINT, PE_READY, COOKIE, IMPORTS, CDECL_IMPORTS, DIGEST
 from lift import pe_sections
 
 
-def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xffffffff, runtime_variant=None, allocator_variant=None, locale_case=False):
+def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xffffffff, runtime_variant=None, allocator_variant=None, locale_case=False, environment_variant=None, argv_case=False, envp_case=False, cinit_case=False, preinitializer_case=False, atexit_case=False, constructor_case=False, constructor_two_case=False, constructor_three_case=False, constructor_four_case=False, constructor_eight_case=False, constructor_nine_case=False, constructor_twelve_case=False):
     base, sections = pe_sections(image)
     uc = Uc(UC_ARCH_X86, UC_MODE_32)
     uc.mem_map(0, 0x2000000)
@@ -49,6 +49,8 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
     extra_globals = (0x1358d7c, 0x1358048, 0x1358c7c, 0x1358d90, 0x1358d68,
                      0x1358d6c, 0x1358d70, 0x1358d74, 0x1358d8c)
     for addr in extra_globals: write(addr, 0)
+    uc.mem_write(0x18000, b'Warframe.exe -language:ru -fullscreen:0\0')
+    uc.mem_write(0x18100, 'A=B\0LANG=ru\0\0'.encode('utf-16le'))
     uc.reg_write(UC_X86_REG_ESP, 0x20000)
     start = ENTRY
     allocation_failures = 1 if runtime_variant == 20 else 0
@@ -165,14 +167,15 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                 write(ptr+12, 0x5678 if read(ptr+8) else 0)
                 result = 0
             elif name == 'HeapAlloc':
-                if (read(sp+4), read(sp+8)) != (0x60000, 8): raise RuntimeError('unexpected original HeapAlloc arguments')
+                flags = read(sp+8)
+                if read(sp+4) != 0x60000 or flags not in (0, 8): raise RuntimeError('unexpected original HeapAlloc arguments')
                 heap_state['attempts'] += 1
                 result = 0
                 if heap_state['attempts'] > allocation_failures and not (runtime_variant == 25 and heap_state['attempts'] == 2):
                     result = heap_state['next']
                     size = read(sp+12)
                     if result + size > 0x100000: raise RuntimeError('original heap arena exhausted')
-                    uc.mem_write(result, bytes(size))
+                    if flags & 8: uc.mem_write(result, bytes(size))
                     heap_state['next'] = (result+size+15)&~15
             elif name == 'Sleep': result = 0
             elif name == 'GetStdHandle':
@@ -185,6 +188,59 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
             elif name == 'SetHandleCount':
                 if read(sp+4) != 32: raise RuntimeError('unexpected handle count')
                 result = 32
+            elif name == 'GetCommandLineA': result = 0x18000
+            elif name == 'GetEnvironmentStringsW': result = 0 if environment_variant == 1 else 0x18100
+            elif name == 'WideCharToMultiByte':
+                args = [read(sp+4+n*4) for n in range(8)]
+                if args[:4] != [0,0,0x18100,13] or args[6:] != [0,0]:
+                    raise RuntimeError(f'unexpected original WideCharToMultiByte arguments {args}')
+                converted = b'A=B\0LANG=ru\0\0'
+                result = 0 if environment_variant == 2 else len(converted)
+                if result and args[4]: uc.mem_write(args[4], converted)
+            elif name == 'FreeEnvironmentStringsW':
+                if read(sp+4) != 0x18100: raise RuntimeError('unexpected original environment token')
+                result = 1
+            elif name == 'GetModuleFileNameA':
+                if [read(sp+4+n*4) for n in range(3)] != [0,0x1358b60,0x104]:
+                    raise RuntimeError('unexpected original GetModuleFileNameA arguments')
+                uc.mem_write(0x1358b60, b'Warframe.exe\0')
+                result = 12
+            elif name == 'initialize_ctype':
+                write(0x1359dac, 1)
+                result = 0
+            elif name == 'isleadbyte': result = 0
+            elif name == 'strlen':
+                ptr = read(sp+4)
+                result = bytes(uc.mem_read(ptr, 0x1000)).index(0)
+            elif name == 'copy_s':
+                destination, size, source = [read(sp+4+n*4) for n in range(3)]
+                source_bytes = bytes(uc.mem_read(source, size))
+                length = source_bytes.index(0) + 1
+                uc.mem_write(destination, source_bytes[:length])
+                result = 0
+            elif name == 'free': result = 0
+            elif name == 'is_nonwritable_image_pointer':
+                if read(sp+4) != 0x1210d58: raise RuntimeError('unexpected image-pointer slot')
+                result = 1
+            elif name == 'raw_dll_main':
+                if read(sp+4) != 1: raise RuntimeError('unexpected raw DLL reason')
+                result = 0
+            elif name == 'IsProcessorFeaturePresent':
+                if read(sp+4) != 10: raise RuntimeError('unexpected processor feature')
+                result = 1
+            elif name == 'SetUnhandledExceptionFilter':
+                if read(sp+4) != 0xf222e1: raise RuntimeError('unexpected exception filter')
+                result = 0
+            elif name == 'allocation_size':
+                if not read(sp+4): raise RuntimeError('unexpected null allocation')
+                result = 128
+            elif name == 'strrchr':
+                ptr, needle = read(sp+4), read(sp+8) & 0xff
+                value = bytes(uc.mem_read(ptr, 0x1000)).split(b'\0')[0]
+                offset = value.rfind(bytes([needle]))
+                result = ptr + offset if offset >= 0 else 0
+            elif name == 'string_pool_init': result = 0x131a960
+            elif name == 'intern_string': result = read(sp+4)
             elif name == 'InitializeCriticalSectionAndSpinCount':
                 ptr = read(sp+4)
                 if read(sp+8) != 4000: raise RuntimeError('unexpected original lock spin count')
@@ -196,9 +252,9 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                 raise RuntimeError(f'unimplemented original fixture {name}')
             uc.reg_write(UC_X86_REG_EAX, result)
             uc.reg_write(UC_X86_REG_EIP, read(sp))
-            uc.reg_write(UC_X86_REG_ESP, sp+4+argc*4)
+            uc.reg_write(UC_X86_REG_ESP, sp+4+(0 if slot in CDECL_IMPORTS else argc*4))
     uc.hook_add(UC_HOOK_CODE, hook)
-    uc.emu_start(start, 0x1ffffff, count=4096)
+    uc.emu_start(start, 0x1ffffff, count=16384)
     if uc.reg_read(UC_X86_REG_EIP) != stop:
         raise RuntimeError('original x86 failed to reach checkpoint within budget')
     if stop == CHECKPOINT:
@@ -208,6 +264,81 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                 heap_state['next'], heap_state['attempts'], bytes(uc.mem_read(0x80000, 0x400)).hex(), calls), visited
     if locale_case:
         return (uc.reg_read(UC_X86_REG_EAX), uc.reg_read(UC_X86_REG_ESP), bytes(uc.mem_read(0x70000, 0x1000)).hex(), calls), visited
+    if environment_variant is not None:
+        environment = read(0x1358030)
+        data = bytes(uc.mem_read(environment, 13)).hex() if environment else ''
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), read(0x1359db8), environment,
+                 heap_state['next'], data, calls), visited)
+    if argv_case:
+        argc, argv = read(0x135806c), read(0x1358070)
+        pointers = [read(argv+index*4) for index in range(argc+1)]
+        data = bytes(uc.mem_read(argv, heap_state['next']-argv)).hex()
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), argc, argv, heap_state['next'],
+                 pointers, data, calls), visited)
+    if constructor_twelve_case:
+        begin = read(0x1359da8) ^ 0xa5a55a5a
+        end = read(0x1359da4) ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), bytes(uc.mem_read(0x1316618,0x30c)).hex(),
+                 bytes(uc.mem_read(begin,end-begin)).hex(), calls), visited)
+    if constructor_nine_case:
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), bytes(uc.mem_read(0x13165d0,0x40)).hex(), calls), visited)
+    if constructor_eight_case:
+        begin = read(0x1359da8) ^ 0xa5a55a5a
+        end = read(0x1359da4) ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), bytes(uc.mem_read(0x13163e0,0x1f0)).hex(),
+                 bytes(uc.mem_read(begin,end-begin)).hex(), calls), visited)
+    if constructor_four_case:
+        begin = read(0x1359da8) ^ 0xa5a55a5a
+        end = read(0x1359da4) ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), read(0x131a9e0),
+                 bytes(uc.mem_read(0x1316358,0x84)).hex(),
+                 bytes(uc.mem_read(begin,end-begin)).hex(), calls), visited)
+    if constructor_three_case:
+        begin = read(0x1359da8) ^ 0xa5a55a5a
+        end = read(0x1359da4) ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), bytes(uc.mem_read(0x1316344,13)).hex(),
+                 bytes(uc.mem_read(begin,end-begin)).hex(), calls), visited)
+    if constructor_two_case:
+        begin = read(0x1359da8) ^ 0xa5a55a5a
+        end = read(0x1359da4) ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), bytes(uc.mem_read(0x1316334,13)).hex(),
+                 bytes(uc.mem_read(begin,end-begin)).hex(), calls), visited)
+    if constructor_case:
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), read(0x128b0fc), read(0x10a9cc8),
+                 read(0x1316330), calls), visited)
+    if atexit_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), begin, end, encoded_begin,
+                 encoded_end, bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if preinitializer_case:
+        fields = [read(addr) for addr in (0x135ade0,0x1359dc0,0x1359da8,0x1359da4,
+                  0x1358040,0x1358044,0x1359c84,0x1359c7c,0x1359dac)]
+        table, count = fields[1], fields[0]
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), heap_state['next'], fields,
+                 bytes(uc.mem_read(table, count*4)).hex(), calls), visited)
+    if cinit_case:
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX),
+                 [read(0x1310ef8 + index*4) for index in range(10)], calls), visited)
+    if envp_case:
+        envp = read(0x1358078)
+        pointers = [read(envp+index*4) for index in range(3)]
+        data = bytes(uc.mem_read(envp, heap_state['next']-envp)).hex()
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), envp, read(0x1359da0),
+                 heap_state['next'], pointers, data, calls), visited)
     if runtime_variant is not None:
         state = [uc.reg_read(UC_X86_REG_EAX)] + [read(addr) for addr in (0x1358c78, 0x1358c68, 0x1358c6c, 0x1358c70, 0x1358c74, 0x1310ef4)] + [tls.get(7, 0)] + [read(addr) for addr in extra_globals] + [read(0x1310ef0), heap_state['next'], heap_state['attempts'], tls.get(8, tls.get(9, 0)), read(0x10000), read(0x1359ca0), read(0x1359c88)]
         lock_state = bytes(uc.mem_read(0x1310d90, 36*8) + uc.mem_read(0x13580b8, 36*24)).hex()
@@ -226,8 +357,126 @@ def main():
     if hashlib.sha256(image).hexdigest() != DIGEST:
         raise RuntimeError('reference executable hash mismatch')
     output = subprocess.check_output([str(args.native.resolve()), '.', '--startup'], text=True)
-    cases, frame_cases, runtime_cases, allocator_cases, locale_cases, visited = 0, 0, 0, 0, 0, set()
+    cases, frame_cases, runtime_cases, allocator_cases, locale_cases, environment_cases, argv_cases, envp_cases, cinit_cases, preinitializer_cases, atexit_cases, constructor_cases, constructor_two_cases, constructor_three_cases, constructor_four_cases, constructor_eight_cases, constructor_nine_cases, constructor_twelve_cases, visited = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, set()
     for line in output.splitlines():
+        if line.startswith('STARTUP_CONSTRUCTOR_012_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_twelve_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax')) + (fields['objects'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor twelve mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_twelve_cases += 1
+            print('STARTUP_CONSTRUCTOR_012_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_009_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_nine_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax')) + (fields['object'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor nine mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_nine_cases += 1
+            print('STARTUP_CONSTRUCTOR_009_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_008_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_eight_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax')) + (fields['objects'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor eight mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_eight_cases += 1
+            print('STARTUP_CONSTRUCTOR_008_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_004_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','pool')) + (fields['object'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor four mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_four_cases += 1
+            print('STARTUP_CONSTRUCTOR_004_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_003_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_three_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax')) + (fields['object'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor three mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_three_cases += 1
+            print('STARTUP_CONSTRUCTOR_003_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_002_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_two_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax')) + (fields['object'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor two mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_two_cases += 1
+            print('STARTUP_CONSTRUCTOR_002_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_001_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','lhs','rhs','result')) + ([int(x,16) for x in fields['calls'].split(',') if x],)
+            if actual != expected: raise RuntimeError(f'constructor mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_cases += 1
+            print('STARTUP_CONSTRUCTOR_001_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_ATEXIT_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, atexit_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','begin','end','encoded_begin','encoded_end')) + (fields['data'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'atexit mismatch: actual={actual}; original={expected}')
+            visited.update(trace); atexit_cases += 1
+            print('STARTUP_ATEXIT_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_PREINITIALIZERS_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, preinitializer_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + ([int(x,16) for x in fields['fields'].split(',') if x], fields['data'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'preinitializer mismatch: actual={actual}; original={expected}')
+            visited.update(trace); preinitializer_cases += 1
+            print('STARTUP_PREINITIALIZERS_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CINIT_POINTERS_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, cinit_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax')) + ([int(x,16) for x in fields['pointers'].split(',') if x], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'cinit pointer mismatch: actual={actual}; original={expected}')
+            visited.update(trace); cinit_cases += 1
+            print('STARTUP_CINIT_POINTERS_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_ENVP_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, envp_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','envp','initialized','next')) + ([int(x,16) for x in fields['pointers'].split(',') if x], fields['data'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'envp mismatch: actual={actual}; original={expected}')
+            visited.update(trace); envp_cases += 1
+            print(f'STARTUP_ENVP_READY envp={actual[3]:08x} original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_ARGV_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, argv_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','argc','argv','next')) + ([int(x,16) for x in fields['pointers'].split(',') if x], fields['data'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'argv mismatch: actual={actual}; original={expected}')
+            visited.update(trace); argv_cases += 1
+            print(f'STARTUP_ARGV_READY argc={actual[3]} argv={actual[4]:08x} original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_ENVIRONMENT_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            variant = int(fields['variant'], 16)
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, environment_variant=variant)
+            actual = tuple(int(fields[key], 16) for key in ('stack','frame','eax','command','environment','next')) + (fields['data'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'environment mismatch variant={variant}; actual={actual}; original={expected}')
+            visited.update(trace); environment_cases += 1
+            print(f'STARTUP_ENVIRONMENT_READY variant={variant} environment={actual[4]:08x} original-x86=MATCH')
+            continue
         if line.startswith('STARTUP_LOCALE_READY '):
             fields = dict(item.split('=') for item in line.split()[1:])
             expected, trace = original(image, 0xbb40e64e, 0x12345678, locale_case=True)
@@ -285,12 +534,25 @@ def main():
     if runtime_cases != 34: raise RuntimeError(f'expected 34 runtime cases, got {runtime_cases}')
     if allocator_cases != 6: raise RuntimeError(f'expected six allocator cases, got {allocator_cases}')
     if locale_cases != 1: raise RuntimeError(f'expected one locale case, got {locale_cases}')
+    if environment_cases != 2: raise RuntimeError(f'expected two environment cases, got {environment_cases}')
+    if argv_cases != 1: raise RuntimeError(f'expected one argv case, got {argv_cases}')
+    if envp_cases != 1: raise RuntimeError(f'expected one envp case, got {envp_cases}')
+    if cinit_cases != 1: raise RuntimeError(f'expected one cinit case, got {cinit_cases}')
+    if preinitializer_cases != 1: raise RuntimeError(f'expected one preinitializer case, got {preinitializer_cases}')
+    if atexit_cases != 1: raise RuntimeError(f'expected one atexit case, got {atexit_cases}')
+    if constructor_cases != 1: raise RuntimeError(f'expected one constructor case, got {constructor_cases}')
+    if constructor_two_cases != 1: raise RuntimeError(f'expected one constructor two case, got {constructor_two_cases}')
+    if constructor_three_cases != 1: raise RuntimeError(f'expected one constructor three case, got {constructor_three_cases}')
+    if constructor_four_cases != 1: raise RuntimeError(f'expected one constructor four case, got {constructor_four_cases}')
+    if constructor_eight_cases != 1: raise RuntimeError(f'expected one constructor eight case, got {constructor_eight_cases}')
+    if constructor_nine_cases != 1: raise RuntimeError(f'expected one constructor nine case, got {constructor_nine_cases}')
+    if constructor_twelve_cases != 1: raise RuntimeError(f'expected one constructor twelve case, got {constructor_twelve_cases}')
     from startup_lift import discover, RANGES, STOPS
     code = discover(image, ENTRY, RANGES, STOPS, IMPORTS)
     missing = set(code)-visited
     if missing:
         raise RuntimeError(f'unexercised instructions: {sorted(missing)}')
-    print(f'PASS: {cases} cookie, {frame_cases} frame, {runtime_cases} runtime, {allocator_cases} allocator, {locale_cases} locale original-x86 comparisons; all {len(code)} reachable instructions exercised.')
+    print(f'PASS: {cases} cookie, {frame_cases} frame, {runtime_cases} runtime, {allocator_cases} allocator, {locale_cases} locale, {environment_cases} environment, {argv_cases} argv, {envp_cases} envp, {cinit_cases} cinit, {preinitializer_cases} preinitializer, {atexit_cases} atexit, {constructor_cases + constructor_two_cases + constructor_three_cases + constructor_four_cases + constructor_eight_cases + constructor_nine_cases + constructor_twelve_cases} constructor original-x86 comparisons; all {len(code)} reachable instructions exercised.')
 
 if __name__ == '__main__':
     main()

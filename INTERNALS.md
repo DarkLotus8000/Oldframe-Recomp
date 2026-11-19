@@ -586,3 +586,187 @@ at `00F2295E`, calling `00F227C4`, before the CRT initializer arrays and WinMain
 at `00401140`. Preserve `-webserver:http://localhost/api/ -language:ru
 -fullscreen:0` for later login/tutorial runs. The title-screen/playable-tutorial
 goal remains active and unverified; the next work does not require a server.
+
+## Command line and ANSI environment verified (2026-11-19)
+
+The translated entry path now passes the signed result check at `00F17C7C`,
+captures GetCommandLineA (`010A7278`) in `01359DB8`, executes the original CRT
+environment converter at `00F22A19`, and publishes its return value in
+`01358030` at the named `00F17C9D` checkpoint. Logical instructions now model
+SF/OF for TEST and support JNS and arithmetic right shift. The successful
+fixture converts the UTF-16 block `A=B\0LANG=ru\0\0` to 13 ANSI bytes at guest
+`00080A20`; the null-environment fixture returns zero. Both results, heap state,
+stack/frame state, import order, command-line pointer, and converted bytes match
+the original x86 under Unicorn.
+
+The allocation path is translated through `00F2200E` and `_malloc` at
+`00F26278`. Rust supplies deterministic GetCommandLineA,
+GetEnvironmentStringsW, WideCharToMultiByte, FreeEnvironmentStringsW, and
+HeapAlloc fixtures. The CRT scans the double-NUL block, computes the character
+count, requests the conversion size, allocates, performs the conversion, frees
+the Windows environment block, and returns the ANSI pointer. Explicit next-run
+boundaries are the prior CRT failure handler `00F17C80`, malloc retry
+`00F22026`, conversion cleanup/failure at `00F22A8A`/`00F22AA2`, lazy heap
+initialization `00F26291`, zero-size allocation `00F262B1`, allocation failure
+`00F262C9`, and oversize allocation `00F262F5`.
+
+REA MCP 6.9.0 was available with the Windows Ghidra provider and opened the
+same SHA-256 used by the generator. Focused headless summaries identified
+`00F22A19` as `___crtGetEnvironmentStringsA` (retained Evidence
+`ev_435ef2c46832809d311635122e8c7aab8f76e653b3328ce072746c01854a3cca`),
+`00F26278` as `_malloc`
+(`ev_d033217d566803a2f504a11ef5963d576fc34c5ee8941ce8a31282eaa668caa8`),
+and the following `00F2295E` routine as `__setargv`
+(`ev_597c5e1d6c1069c1b1c0ae4ced16cad5cbbd682d2cf90ee8fc4aba381029d21e`).
+The retained environment pseudocode corroborates the translated control flow;
+it is static Ghidra evidence, while the Unicorn comparisons establish execution.
+
+`verify-startup.cmd "D:\Warframe 2012"` passes 61 original-x86 comparisons
+(six cookie, twelve frame, 34 runtime, six allocator, one locale, and two
+environment cases) and exercises all 760 instructions in the supported bounded
+group. All 20 Rust tests and five discovery tests pass. Cache regression remains
+44 framed entries, 12 unframed entries, one stored frame, and 192 compressed
+blocks across 25 archives; the asset remains 43,708 bytes and 256 x 32 pixels.
+The output is recorded in ignored `target/startup-verification.log`.
+
+Next: translate `__setargv` at `00F2295E` and its command-line tokenizer at
+`00F227C4`, verify argc/argv and copied argument bytes at `0135806C` and
+`01358070`, then continue through the remaining CRT initializer arrays toward
+WinMain at `00401140`. Preserve the later login/tutorial arguments
+`-webserver:http://localhost/api/ -language:ru -fullscreen:0`.
+
+## argv and environment vector verified (2026-11-19)
+
+The translated entry path now executes `__setargv` at `00F2295E`, including
+the tokenizer at `00F227C4`, and then the environment-vector initializer at
+`00F226E8`. The command-line fixture is `Warframe.exe -language:ru
+-fullscreen:0`. At checkpoint `00F17CAE`, both implementations publish argc=3
+at `0135806C` and argv=`00080A30` at `01358070`; the three pointers, terminating
+null pointer, and copied argument bytes match. At checkpoint `00F17CBF`, both
+publish envp=`00080A70` at `01358078`, containing `A=B`, `LANG=ru`, and a null
+pointer, and set the initialized flag at `01359DA0` to one. The heap ends at
+`00080AA0` in both runs.
+
+The generator gained MOVSX and SETE and discovers the newly reachable direct
+calls and branch targets as a group. Rust supplies deterministic
+GetModuleFileNameA, strlen, bounded-copy, and free boundaries; original x86
+performs command-line counting/copying and environment filtering/allocation.
+Quoted/DBCS tokenizer alternatives, allocation failures, the absent-environment
+return at `00F22704`, and the already-initialized ctype call at `00F226F1` are
+explicit unresolved boundaries. They are not counted as exercised behavior.
+
+`verify-startup.cmd "D:\Warframe 2012"` passes 63 original-x86 comparisons
+(six cookie, twelve frame, 34 runtime, six allocator, one locale, two
+environment, one argv, and one envp) and exercises all 1,027 instructions in
+the supported bounded group. All 20 Rust tests and five Python tests pass. The
+cache still matches 44 framed entries, 12 unframed entries, one stored frame,
+and 192 compressed blocks across 25 archives; the preview asset remains 43,708
+bytes with a 256 x 32 top mip.
+
+Focused headless Ghidra summary requests for `00F226E8` and the next routine
+`00F20787` were issued through the available REA MCP server, but did not return
+within the client window. Direct inspection identifies the next boundary:
+`00F20787` encodes ten runtime pointers via `00F23CB4`, walks the CRT
+pre-initializer range `010A99F0..010A9A10` through `00F20763`, registers
+`00F22AD6`, then begins the large constructor table at
+`010A761C..010A99EC`. Later, `00F22689` derives lpCmdLine and `00F17CEE` calls
+WinMain at `00401140`.
+
+Last verified checkpoint: `00F17CBF`, immediately before the call to
+`00F20787`. Next: translate the direct path through `00F20787` to the first
+indirect pre-initializer boundary, resolve and verify the seven non-null
+pre-initializer entries, then continue to `00F22689` and WinMain. The title
+screen remains unverified, and no SpaceNinjaServer process or network service
+was used by these headless checks.
+
+## CRT pre-initializers verified (2026-11-19)
+
+The translated entry path now enters `__cinit` at `00F20787`. The named
+`STARTUP_CINIT_POINTERS_READY` checkpoint at `00F207B3` verifies all ten slots
+at `01310EF8..01310F1C` after the original loop at `00F23CB4` encodes them.
+The PE's raw-DLL callback is `00F18111`; Rust supplies the executable-image
+pointer predicate and raw-DLL callback boundaries while the translated wrapper
+performs the tests, arguments, calls, and stack cleanup.
+
+The seven-entry pre-initializer table `010A99F0..010A9A10` is now a closed
+indirect target set. Original translated code executes entries `00F179F2`,
+`00F182B1`, `00F192AB`, `00F231D7`, `00F25852`, `00F2615A`, and `00F22323`.
+At `STARTUP_PREINITIALIZERS_READY` (`00F207C4`), the original and translated
+runs agree on the 20-entry CRT stream-pointer table, its pointed-to values,
+the encoded 128-byte atexit allocation, captured system time, processor-feature
+globals, ctype flag, guest-heap end, registers, stack, and ordered host calls.
+Rust supplies deterministic IsProcessorFeaturePresent and
+SetUnhandledExceptionFilter results. Allocation retry/failure and alternate
+already-sized table branches remain explicit boundaries.
+
+The lifter now supports JGE with validated CMP flag provenance and permits a
+verified indirect call set through either a register or an absolute pointer.
+Indirect cdecl host boundaries use caller cleanup, matching direct calls.
+
+REA's focused Ghidra fast path identified `00F20787` as `__cinit` and retained
+Evidence `ev_a31c5fa1e63e86c8ef4b8f68505cc174d8deae9fd129e9e4f0eceda82eca3a64`.
+It identified `00F1831E` as `_atexit` (Evidence
+`ev_ac095e1921bd0cdf4a533749192b9764448ae8e707ed6af6a604b2ed8a46fb20`)
+and `00F22689` as `__wincmdln` (Evidence
+`ev_976504471a805abe41c53830c20dfc3edb359a29e097fae08e226e8800197ebd`).
+The earlier summary timeout was a client observation limit; the live REA
+session and these later focused results confirm the server and Ghidra provider
+remain usable.
+
+`verify-startup.cmd "D:\Warframe 2012"` passes 65 original-x86 comparisons
+and exercises all 1,184 instructions in the supported bounded group. All 20
+Rust tests and five Python tests pass. Cache and asset evidence remains 44
+framed entries, 12 unframed entries, one stored frame, 192 compressed blocks
+across 25 archives, and a 43,708-byte 256 x 32 preview asset.
+
+Last verified checkpoint: `00F207C4`, after every CRT pre-initializer returns
+zero. Next: translate `_atexit` registration of callback `00F22AD6`, then
+inventory and execute the constructor table `010A761C..010A99EC`. After
+`__cinit` returns, translate `__wincmdln` and enter WinMain at `00401140`.
+The title/login screen and UI input remain unverified. SpaceNinjaServer was not
+started or contacted.
+
+## atexit and first constructors verified (2026-11-19)
+
+The original `_atexit` path at `00F1831E` is now translated through its SEH
+wrapper, lock acquire/release, encoded callback-table access, and success
+normalization. `STARTUP_ATEXIT_READY` at `00F207D4` verifies that callback
+`00F22AD6` occupies the first four-byte slot and that the encoded end pointer
+advanced exactly once. Rust supplies the allocation-size query for the guest
+heap allocation; growth/reallocation and corrupt-pointer branches remain
+explicit boundaries.
+
+The constructor table contains 2,292 entries, of which 2,290 are nonzero and
+all 2,290 targets are unique. The lifter now admits constructor targets in
+measured batches and can stop at the first unresolved target with the same
+return address already pushed that the original x86 has at function entry.
+This makes each batch directly comparable without pretending later constructors
+ran.
+
+The first constructor `010670D0` performs a scalar float multiply and stores
+the result at `01316330`. MOVSS and MULSS are now translated with exact f32 bit
+rounding. The second constructor `010670F0` invokes the translated leaf object
+initializer at `00421AE0`, creates the 13-byte object at `01316334`, and
+registers destructor `010912E0` through the translated `_atexit` path.
+`STARTUP_CONSTRUCTOR_001_READY` stops at `010670F0`,
+`STARTUP_CONSTRUCTOR_002_READY` stops at `01067120`, and the same object shape
+at `01067120` is verified by `STARTUP_CONSTRUCTOR_003_READY` at `01067150`.
+All three match original x86 registers, stack, written bytes, callback bytes,
+and ordered host calls.
+
+Focused Ghidra evidence identifies the second constructor's object initializer
+as `FUN_00421ae0`, a 32-byte leaf ending in `ret 0xC` (Evidence
+`ev_db173f2dc1b330251694228414482770efdf5e3d20d9fc3da8d979942a67925c`).
+The next shared object initializer at `00425060` is retained as Evidence
+`ev_69d2bb1464eded720351b5a6120956d659fe484ca9a094201a0f9f10f44eedd3`.
+
+`verify-startup.cmd "D:\Warframe 2012"` passes 69 original-x86 comparisons
+and exercises all 1,314 instructions in the bounded group. All 20 Rust tests,
+five Python tests, cache checks, and the 43,708-byte asset check pass.
+
+Last verified checkpoint: entry of constructor `01067150`, after the first
+three constructors have returned. Next: translate the repeated constructor family
+rooted at `00425060` and its direct callees in a batch, continuing until the
+first genuinely new constructor shape. The later `__wincmdln`, WinMain, title
+screen, and UI-input checks remain outstanding. SpaceNinjaServer remained
+stopped.

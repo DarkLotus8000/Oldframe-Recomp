@@ -17,13 +17,24 @@ THREAD_ALLOCATED = 0xF22FE1
 THREAD_READY = 0xF17C63
 FILE_TABLE_READY = 0xF21E42
 STOPS = {0xF23011, 0xF23016, 0xF17C56, 0xF22EB4, 0xF17C67,
-         0xF17C98, 0xF209A8, 0xF1F0DC, 0xF22506, 0xF22357, 0xF20706,
+         0xF17CC6, 0xF207F4, 0xF2081C,
+         0xF17C80, 0xF17CA6, 0xF17CB7, 0xF209A8, 0xF22026, 0xF22A8A,
+         0xF22AA2, 0xF22A11, 0xF22506, 0xF22357, 0xF20706, 0xF26291, 0xF262C9,
+         0xF262B1, 0xF262F5,
+         0xF227F4, 0xF22823, 0xF22872, 0xF22896, 0xF228A2, 0xF228CC,
+         0xF22908, 0xF2292B, 0xF229A6,
+         0xF227A0, 0xF227B7, 0xF1A8FC,
+         0xF226F1, 0xF22704, 0xF22707,
+         0xF17A06, 0xF17A24, 0xF17A3D, 0xF17A90, 0xF182D6,
+         0xF18245, 0xF182AA,
+         0x42507E,
          0xF2D4F3, 0xF1A754, 0xF303A5, 0xF303E3, 0xF21D4B, 0xF22AC4,
          0xF21E59, 0xF21F70}
 COOKIE = 0x1310B30
 # Explicit scope, not a list of individual blocks or call targets.
 RANGES = ((ENTRY, ENTRY + 10), (0xF23039, 0xF230D4),
-          (CHECKPOINT, 0xF17C98), (0xF21D70, 0xF21DB5),
+          (CHECKPOINT, 0xF17CC6), (0xF20787, 0xF207F4),
+          (0xF23CB4, 0xF23CD7), (0xF21D70, 0xF21DB5),
           (0xF22AB0, 0xF22AD6), (0xF21DC9, 0xF21E59), (0xF21F5C, 0xF2200E),
           (0xF2301B, 0xF23039), (0xF22EA0, 0xF2301B), (0xF21BBC, 0xF21C06),
           (0xF22BBC, 0xF22C70), (0xF21DB5, 0xF21DC9), (0xF25870, 0xF258FF),
@@ -31,8 +42,24 @@ RANGES = ((ENTRY, ENTRY + 10), (0xF23039, 0xF230D4),
           (0xF22053, 0xF2209F), (0xF3038D, 0xF3040F),
           (0xF2200E, 0xF22053), (0xF26278, 0xF2630C),
           (0xF22A19, 0xF22AB0),
+          (0xF2295E, 0xF22A19), (0xF227C4, 0xF2295E),
+          (0xF226E8, 0xF227C4),
+          (0xF179F2, 0xF17AA3), (0xF182B1, 0xF182E2),
+          (0xF181FB, 0xF182B1), (0xF182E2, 0xF18335),
+          (0xF192AB, 0xF192D9), (0xF231D7, 0xF231E7),
+          (0xF2615A, 0xF2616A), (0xF22323, 0xF22331),
+          (0x10670D0, 0x10670E9),
+          (0x10670F0, 0x1067112), (0x421AE0, 0x421B00),
+          (0x1067120, 0x1067142),
+          (0x1067150, 0x1067175), (0x425060, 0x4250DC),
+          (0x1067180, 0x10671C7), (0x10671D0, 0x10671F5),
+          (0x1067200, 0x106720C), (0x1067210, 0x1067257),
+          (0x1067260, 0x106726A), (0x402B40, 0x402B79),
+          (0x1067270, 0x10672B7), (0x10672C0, 0x10672CC),
+          (0x10672D0, 0x10672DC),
+          (0x424B60, 0x424BE1), (0x423B70, 0x423BCD),
           (0xF22B05, 0xF22B0E),
-          (0xF20730, 0xF20763), (0xF22AFC, 0xF22B05),
+          (0xF2071E, 0xF20787), (0xF22AFC, 0xF22B05),
           (0xF2D4E4, 0xF2D4F3), (0xF1A79D, 0xF1A7AC),
           (0xF23D32, 0xF23D41), (0xF2E4AF, 0xF2E4BE),
           (0xF2ABCF, 0xF2ABED), (0xF2E49E, 0xF2E4AF))
@@ -64,7 +91,23 @@ IMPORTS = {0x10A7268: ('GetSystemTimeAsFileTime', 1),
            0x10A7278: ('GetCommandLineA', 0),
            0x10A72E4: ('GetEnvironmentStringsW', 0),
            0x10A72C4: ('WideCharToMultiByte', 8),
-           0x10A72E0: ('FreeEnvironmentStringsW', 1)}
+           0x10A72E0: ('FreeEnvironmentStringsW', 1),
+           0x10A72DC: ('GetModuleFileNameA', 3),
+           0xF25852: ('initialize_ctype', 0),
+           0xF30820: ('isleadbyte', 1),
+           0xF26890: ('strlen', 1),
+           0xF28C15: ('copy_s', 3),
+           0xF1F0DC: ('free', 1),
+           0xF26500: ('is_nonwritable_image_pointer', 1),
+           0xF18111: ('raw_dll_main', 1)}
+IMPORTS.update({0x10A7308: ('IsProcessorFeaturePresent', 1),
+                0x10A7160: ('SetUnhandledExceptionFilter', 1),
+                0xF23CFF: ('allocation_size', 1),
+                0xF1ABC0: ('strrchr', 2),
+                0x423280: ('string_pool_init', 0),
+                0x423730: ('intern_string', 3)})
+CDECL_IMPORTS = {0xF25852, 0xF30820, 0xF26890, 0xF28C15, 0xF1F0DC,
+                 0xF26500, 0xF18111, 0xF23CFF, 0xF1ABC0, 0x423280}
 INDIRECT_IMPORTS = {pc: 0x10A70A8 for pc in (0xF22ECA, 0xF22ED7, 0xF22EE4, 0xF22EF1)}
 INDIRECT_IMPORTS.update({0xF22F5C: 0x10A72F0})
 INDIRECT_IMPORTS.update({pc: 0x10A7284 for pc in (0xF22F77, 0xF22F84, 0xF22F91, 0xF22F9E)})
@@ -72,10 +115,18 @@ INDIRECT_IMPORTS[0xF22FBF] = 0x10A7288
 INDIRECT_IMPORTS[0xF22FEE] = 0x10A7288
 INDIRECT_IMPORTS[0xF22A61] = 0x10A72C4
 INDIRECT_IMPORTS[0xF22A84] = 0x10A72C4
+INDIRECT_IMPORTS.update({pc: 0x10A7288 for pc in (0xF18210, 0xF1821D)})
+INDIRECT_IMPORTS.update({pc: 0x10A7284 for pc in (0xF18296, 0xF1829E)})
 INDIRECT_IMPORTS.update({pc: 0x10A72F8 for pc in (0xF25882, 0xF2588F, 0xF2589C, 0xF258A9, 0xF258B6, 0xF258D2, 0xF258E2, 0xF258F8)})
 # A closed, verified set may mix guest functions and host import tokens.
 INDIRECT_TARGETS = {0xF22FC1: (0x50000, 0xF22B05)}
 INDIRECT_TARGETS[0xF22FF0] = (0x50020, 0x10A72F0)
+INDIRECT_TARGETS[0xF207A7] = (0xF18111,)
+INDIRECT_TARGETS[0xF2077A] = (0xF179F2, 0xF182B1, 0xF192AB, 0xF231D7,
+                              0xF25852, 0xF2615A, 0xF22323)
+INDIRECT_TARGETS[0xF207EB] = (0x10670D0, 0x10670F0, 0x1067120, 0x1067150,
+                              0x1067180, 0x10671D0, 0x1067200, 0x1067210,
+                              0x1067260, 0x1067270, 0x10672C0, 0x10672D0)
 DIGEST = '614c08f25b531d590c5aa6d9cf35b1e406e83d35fbd50e61188f19247fb176ae'
 
 
@@ -132,14 +183,15 @@ def discover(image, entry, ranges, stops, imports, limit=2048):
         if op in ('call', 'jmp') or op in lift.CONDITIONS:
             arg = args[0]
             if arg.type == lift.X86_OP_IMM:
-                pending.append(arg.imm)
+                if not (op == 'call' and arg.imm in imports):
+                    pending.append(arg.imm)
             elif (op == 'call' and arg.type == lift.X86_OP_MEM
                   and not arg.mem.base and not arg.mem.index
                   and not arg.mem.segment and arg.mem.disp in imports):
                 pass
             elif op == 'call' and arg.type == lift.X86_OP_REG and pc in INDIRECT_IMPORTS:
                 pass
-            elif op == 'call' and arg.type == lift.X86_OP_REG and pc in INDIRECT_TARGETS:
+            elif op == 'call' and pc in INDIRECT_TARGETS:
                 pending.extend(target for target in INDIRECT_TARGETS[pc] if target not in imports)
             else:
                 raise ValueError(f'unresolved {op} at {pc:#x}: {insn.op_str}')
@@ -167,12 +219,12 @@ def generate_startup(image):
     used.update(lift.LOW_WORD.get(reg, lift.LOW_BYTE.get(reg, reg)) for reg in list(used))
     lines = ['// Generated locally by lift.py; do not edit.', 'use super::Memory;',
              '#[derive(Default)]',
-             'struct Registers { ' + ', '.join(f'{r}: u32' for r in lift.REGISTERS if r in used) + ', carry: bool, zero: bool, sign: bool, overflow: bool }',
+             'struct Registers { ' + ', '.join(f'{r}: u32' for r in lift.REGISTERS if r in used) + ', xmm0: u128, carry: bool, zero: bool, sign: bool, overflow: bool }',
              f'pub(super) fn run(m: &mut Memory, stop: u32) -> Result<(), String> {{ run_from(m, {ENTRY:#x}, stop) }}',
              'pub(super) fn run_from(m: &mut Memory, start: u32, stop: u32) -> Result<(), String> {',
              'let mut r = Registers { esp: 0x20000, ..Default::default() };',
              'let mut pc = start;',
-             'for _ in 0..4096 {',
+             'for _ in 0..16384 {',
              'if pc == stop { m.stack = r.esp; m.frame = r.ebp; m.eax = r.eax; return Ok(()); }',
              'match pc {']
     for pc, insn in sorted(code.items()):
@@ -180,17 +232,27 @@ def generate_startup(image):
         op, args, following = insn.mnemonic, insn.operands, pc+insn.size
         if op == 'call':
             if args[0].type == lift.X86_OP_IMM:
-                lines += ['r.esp -= 4;', f'm.write32(r.esp, {following:#x});', f'pc = {args[0].imm:#x};']
+                target = args[0].imm
+                if target in IMPORTS:
+                    argc = IMPORTS[target][1]
+                    cleanup = 1 if target in CDECL_IMPORTS else argc + 1
+                    lines += ['r.esp -= 4;', f'm.write32(r.esp, {following:#x});',
+                              f'r.eax = m.import({target:#x}, r.esp + 4)?;',
+                              f'r.esp += {cleanup*4};', f'pc = {following:#x};']
+                else:
+                    lines += ['r.esp -= 4;', f'm.write32(r.esp, {following:#x});', f'pc = {target:#x};']
             elif pc in INDIRECT_TARGETS:
                 lines += [f'let target = {lift.value(insn, args[0])};', 'r.esp -= 4;',
                           f'm.write32(r.esp, {following:#x});', 'match target {']
                 for target in INDIRECT_TARGETS[pc]:
                     if target in IMPORTS:
                         argc = IMPORTS[target][1]
-                        lines.append(f'{target:#x} => {{ r.eax = m.import(target, r.esp + 4)?; r.esp += {(argc+1)*4}; pc = {following:#x}; }},')
+                        cleanup = 1 if target in CDECL_IMPORTS else argc + 1
+                        lines.append(f'{target:#x} => {{ r.eax = m.import(target, r.esp + 4)?; r.esp += {cleanup*4}; pc = {following:#x}; }},')
                     else:
                         lines.append(f'{target:#x} => {{ pc = target; }},')
-                lines += [f'_ => return Err(format!("unresolved indirect call at {pc:#x}: target {{target:#x}}")),', '}']
+                lines += ['_ if target == stop => { m.stack = r.esp; m.frame = r.ebp; m.eax = r.eax; return Ok(()); },',
+                          f'_ => return Err(format!("unresolved indirect call at {pc:#x}: target {{target:#x}}")),', '}']
             else:
                 slot = args[0].mem.disp if args[0].type == lift.X86_OP_MEM else INDIRECT_IMPORTS[pc]
                 argc = IMPORTS[slot][1]
