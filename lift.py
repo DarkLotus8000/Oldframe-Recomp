@@ -168,7 +168,7 @@ def translate(insn):
         source = value(insn, operands[1])
         cast = "i8" if operands[1].size == 1 else "i16"
         return [store(insn, operands[0], f"({source} as {cast}) as i32 as u32")]
-    if op in ("movq", "movlpd"):
+    if op in ("movq", "movlpd", "movsd"):
         dest, source = operands
         if dest.type == X86_OP_REG and insn.reg_name(dest.reg) == "xmm0" and source.type == X86_OP_MEM:
             return [f"r.xmm0 = m.read64({address(insn, source.mem)}) as _;"]

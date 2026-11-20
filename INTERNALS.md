@@ -770,3 +770,172 @@ rooted at `00425060` and its direct callees in a batch, continuing until the
 first genuinely new constructor shape. The later `__wincmdln`, WinMain, title
 screen, and UI-input checks remain outstanding. SpaceNinjaServer remained
 stopped.
+
+## Constructors 4 through 48 verified (2026-11-20)
+
+The bounded constructor-table lift now reaches entry `01067810`, after the
+first 48 constructors have returned. Constructor 4 executes the original
+object code at `00425060`, `00424B60`, and `00423B70`; Rust supplies narrow
+boundaries for `strrchr` at `00F1ABC0`, string-pool initialization at
+`00423280`, and string interning at `00423730`. Constructors 5 through 8 reuse
+that object family. Constructor 9 executes the SIMD initializer at `00402B40`;
+the lifter now models 128-bit XMM state and translates MOVAPS, XORPS, SHUFPS,
+MOVQ, MOVSS, and MULSS used by this slice.
+
+Constructors 13 through 22 execute the linked registration-node initializer at
+`004172E0`. Its original code builds the nodes at `01316924..01316B8B`, sorts
+them through head `01316920`, and registers the corresponding callbacks. Three
+equivalent native/original fixtures cover an empty list, a name sharing a
+two-byte prefix, and an equal name. This exercises every discovered branch in
+the pairwise string comparison without relaxing the coverage check.
+Constructors 23 and 24 then register callbacks `010915B0` and `010915E0`
+through the translated `_atexit` path.
+
+Constructor 25 executes the 82-instruction straight-line object initializer at
+`00419DF0` and creates the 421-byte object at `01316BC0`. Rust supplies the
+narrow `00415B30` small-string boundary used six times with the verified empty
+string at `010AA35A`; the surrounding field initialization remains translated
+game code. Constructors 26, 27, and 32 register callbacks, while constructors
+28 through 31 copy the original scalar at `0128D590` into four globals at
+`01316D7C..01316D8B`.
+Constructor 33 takes the verified equal-constant branch through `0041D1F0`
+and writes the 64-bit `FFFFFFFFFFFFFFFF` timer sentinel at `01317F38`. COMISS
+flag translation now covers this branch. Its positive-duration path remains an
+explicit boundary at `0041D209`; the computed calls reported by Ghidra are not
+treated as exercised startup behavior.
+
+Constructor 34 executes the translated MD5-style initializer at `00446700`,
+which writes the four standard state words and clears its 64-byte buffer. Rust
+supplies the narrow CRT `memset` boundary. Constructors 35 and 37 register and
+intern through already verified boundaries; the cold string-pool path at
+`01067529` is explicit because constructor 4 initialized that pool earlier in
+the real startup sequence. Constructors 38 through 41 copy scalar state and
+create two more translated `00425060` objects. Constructor 42 increments
+`0128D96C`, and constructor 43 registers callback `01091800`. Constructor 44
+builds the inline `.epkg` small string from `010B03C0`, using the widened
+`00415B30` boundary, and registers its callback. The boundary now reproduces
+the original small-string layout for inputs up to 15 bytes; longer strings
+remain outside this bounded startup slice.
+
+Constructor 44 also reaches the first full atexit callback block. The original
+growth path at `00F18245` calls `00F2209F`; the deterministic host reallocates
+the 128-byte block to 256 bytes, preserves its contents, and lets translated
+game code append the next callback. The allocation-failure fallback at
+`00F18265` remains an explicit unresolved boundary.
+
+Constructor 45 executes `0048BC20` and `0048BBE0` plus their shared
+`00423B10` string-interning helper. It initializes `0131C360` from the original
+string at `010BA030` and writes the resulting four-field object at `0131AC9C`.
+Both the first-use and already-initialized branches of `0048BC20` match the
+original x86. The cold `00423B34` string-pool path is an explicit boundary
+because constructor 4 initialized the shared pool earlier in the real sequence.
+
+Constructor 46 calls the original game's allocator at `004132A0` for one
+28-byte object described by `0128F238`. Rust supplies that allocator as a
+narrow deterministic boundary, while translated constructor code initializes
+the self-linked list fields, stores the pointer at `0131ACB0`, sets both flag
+bytes, and registers callback `010918A0`. The allocation-failure path begins at
+`010676F3` and remains an explicit boundary. The pointer, all 28 object bytes,
+callback table, registers, and ordered calls match the original x86.
+
+
+Constructor 47 executes the exercised portions of `0043ED70`, `0043D3D0`,
+and `00422CF0` as translated code. It builds the object at `0131AD98`, creates
+the shared 196-byte manager stored at `0131AD88`, reserves its pointer vector,
+and zeroes the trailing scalar fields through `0131AE1F`. Rust supplies the
+stateful `0043EB90` registration boundary, which allocates and links the first
+manager node for the fixed startup arguments. Alternate flag modes begin at
+`0043EDFE` and `0043EE1F`; optional vector, copied-name, seventh-argument, and
+allocation-failure paths remain explicit boundaries at `0043EE26`, `0043EE6C`,
+`0043EEE9`, and `0043EECE`. The lifter now translates scalar `MOVSD` stores.
+The full object, shared-manager allocation, callback table, registers, heap
+cursor, and ordered calls match original x86 under equivalent host fixtures.
+
+
+Constructor 48 reuses `0043ED70` with flags `00000401` to build the 160-byte
+object at `0131AE20`. Its name key matches constructor 47, so the stateful
+`0043EB90` boundary now searches the manager vector and reuses the existing
+node rather than allocating a duplicate. Translated constructor code replaces
+the vtable, clears its additional double-width fields and byte flag, and
+registers callback `01091940`. The complete object and unchanged shared
+manager allocation match original x86, including the heap cursor and callback
+sequence.
+
+Focused Ghidra evidence retained for this work includes `00424B60` (Evidence
+`ev_56106a5df8af48ef0d52b4b197e478076cd5cd0ec984a7b5c921f89cd9934c9d`),
+`00423B70` (Evidence
+`ev_ec16ac413ef9cb54004a8d9f0021af6f70c5894010421019c1decc0f08e53764`),
+`00F1ABC0` (Evidence
+`ev_5c652a77ee5226f6c0216504be1aaf1cb52243219520764f9f57c55b58a1e1a5`),
+`00423280` (Evidence
+`ev_078f7caa74af07ea05b3f12ff307c09b110fd98214d1bcee9f938cee006e5616`),
+`00423730` (Evidence
+`ev_3c6a8593ccebeaf512deb26346aa5d131453b6a90e700682884e81559906757c`),
+and `00402B40` (Evidence
+`ev_ed581d887167634f9867e843ea9008f94ccafa5073725e9d3fd3137466eeba3b`).
+The focused summary for the linked-node initializer `004172E0` is retained as
+Evidence `ev_9447783dde8d8330918b2388fb29bfee5b9cf74ecc503a8eabb68e94472390d6`;
+Ghidra reported 69 instructions, 15 basic blocks, no unresolved calls, and
+complete summary-view coverage.
+The `00419DF0` object initializer summary is Evidence
+`ev_e7af1e2903688499b7d001aad2ad4af3adfbca96fa58acbbe01aa811a13cf087`;
+its `00415B30` small-string dependency is Evidence
+`ev_432bbccce8bf0cc36d6bff22908b1238fc1d022942add84ea00d974aeb51548c`.
+The next initializer at `0041D1F0` is retained as Evidence
+`ev_98119e6e15370970f3fd1c551196b9d72f417b706a65ba770dcbcf9f14a63618`;
+Ghidra reports three computed calls at `0041D218`, `0041D231`, and `0041D240`
+and one unresolved terminal call at `0041D24A`; these remain boundaries on the
+untaken positive-duration branch.
+
+
+
+Focused REA reports 152 instructions, 32 basic blocks, seven resolved callees,
+and one unresolved assertion call in `0043ED70` (Evidence
+`ev_e310f796b29cb16e5fd7c12c75b5c9f46c892585a321811068b159c77c4df1e3`).
+The straight-line manager constructor `0043D3D0` is Evidence
+`ev_006cb4d599ca09012ffcca07205736bc157213a5152983aa0731768fda7ab0d7`;
+the vector reserve helper `00422CF0` is Evidence
+`ev_5f70e3e514573856ff7049cf7ff86c17b3ab24dca3f78f07b811259d24f4e7cd`.
+The deeper registration subsystem `0043EB90` is retained as Evidence
+`ev_04e6d8d0fff894c5730c4d67442d27d7f39404177b4a4e593e3224d5cd4b2009`.
+
+The focused REA summary for the allocator `004132A0` is Evidence
+`ev_cd3ce191eea0bfbc9a6977aeb424da312134fda24e1fe1dc842e5a7db2859adc`.
+Ghidra reports 409 instructions, 94 basic blocks, nine resolved callees, and
+13 unresolved assertion calls, which is why this bounded slice keeps the
+allocator behind a validated host interface rather than admitting its full
+heap implementation.
+
+Focused REA summaries for constructor 45 report 15 instructions and three
+basic blocks for `0048BC20` (Evidence
+`ev_9724c6f26f1f68fa964f928d2b3e5879bc827401f8bd12636efbf16bc3ceaf17`),
+and 18 instructions in one block for `0048BBE0` (Evidence
+`ev_f5d6fdd3e245a71c6ca3d28c5d277d4f7788ee4704318f5d9135455c85fdae41`).
+Both have one resolved callee and no unresolved calls. The focused
+`00423B10` summary is Evidence
+`ev_1c5e10f80ea4a3362fd496c0778fd1914ad35a2bcd472b3da68ed19c64f20cae`.
+
+On 2026-11-20, `binary_session` also confirmed that the live REA MCP target is
+the original PE32 executable, using headless Ghidra 12.1.4 with function
+analysis and summary views available.
+
+`verify-startup.cmd "D:\Warframe 2012"` passes 89 original-x86 comparisons,
+including twenty-three constructor comparisons, and exercises all 2,205 reachable
+instructions in the bounded group. All 20 Rust tests and five Python tests
+pass. Cache verification remains 44 framed entries, 12 unframed entries, one
+stored frame, and 192 compressed blocks across 25 archives. The headless asset
+check still loads the 43,708-byte SigninReward texture with a 256 x 32 top mip
+and three compressed frames.
+
+Last verified checkpoint: entry of constructor `01067810`, after the first 48
+constructors have returned. Next: inspect constructor 49 at `01067810` and
+continue the related manager/object family. The alternate positive-duration
+path in `0041D1F0` remains recorded at `0041D209`. Continue through
+the constructor table, `__wincmdln` at `00F22689`, and WinMain at `00401140`.
+The title/login screen and UI input remain unverified. SpaceNinjaServer was not
+started or contacted.
+
+Focused Ghidra analysis has already identified constructor 34's target
+`00446700` as an 18-instruction, single-basic-block initializer with one
+resolved direct callee and no unresolved calls (Evidence
+`ev_d0a45b89a0dc6be6be43b1babb9c9c7b73ceb36b7f313ee801f600933c828621`).

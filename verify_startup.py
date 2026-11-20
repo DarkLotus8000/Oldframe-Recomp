@@ -6,13 +6,13 @@ import subprocess
 import hashlib
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
 from unicorn.x86_const import (UC_X86_REG_ESP, UC_X86_REG_EIP, UC_X86_REG_EAX,
-                              UC_X86_REG_EBP, UC_X86_REG_FS, UC_X86_REG_GDTR,
+                              UC_X86_REG_EBP, UC_X86_REG_ECX, UC_X86_REG_FS, UC_X86_REG_GDTR,
                               UC_X86_REG_CS, UC_X86_REG_DS, UC_X86_REG_SS, UC_X86_REG_ES)
 from startup_lift import ENTRY, CHECKPOINT, PE_READY, COOKIE, IMPORTS, CDECL_IMPORTS, DIGEST
 from lift import pe_sections
 
 
-def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xffffffff, runtime_variant=None, allocator_variant=None, locale_case=False, environment_variant=None, argv_case=False, envp_case=False, cinit_case=False, preinitializer_case=False, atexit_case=False, constructor_case=False, constructor_two_case=False, constructor_three_case=False, constructor_four_case=False, constructor_eight_case=False, constructor_nine_case=False, constructor_twelve_case=False):
+def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xffffffff, runtime_variant=None, allocator_variant=None, locale_case=False, environment_variant=None, argv_case=False, envp_case=False, cinit_case=False, preinitializer_case=False, atexit_case=False, constructor_case=False, constructor_two_case=False, constructor_three_case=False, constructor_four_case=False, constructor_eight_case=False, constructor_nine_case=False, constructor_twelve_case=False, constructor_twenty_two_case=False, constructor_twenty_two_seed=0, constructor_twenty_four_case=False, constructor_twenty_five_case=False, constructor_thirty_two_case=False, constructor_thirty_three_case=False, constructor_thirty_seven_case=False, constructor_forty_one_case=False, constructor_forty_three_case=False, constructor_forty_four_case=False, constructor_forty_five_case=False, constructor_forty_six_case=False, constructor_forty_seven_case=False, constructor_forty_eight_case=False):
     base, sections = pe_sections(image)
     uc = Uc(UC_ARCH_X86, UC_MODE_32)
     uc.mem_map(0, 0x2000000)
@@ -93,6 +93,16 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
     locks = []
     tls_allocations = []
     heap_state = {'next': 0x80000, 'attempts': 0}
+    if constructor_twenty_two_seed:
+        # Match the native fixture and force the two-byte-at-a-time name
+        # comparison to continue past its first pair.
+        write(0x1316920, 0x70000)
+        write(0x70004, 0x70100)
+        write(0x70038, 0)
+        uc.mem_write(0x70100, b'SysX\0' if constructor_twenty_two_seed == 1 else b'Sys\0')
+    if constructor_forty_five_case == 2:
+        write(0x131c364, 1)
+        write(0x131c360, 0x10ba030)
     def hook(uc, pc, size, _):
         visited.add(pc)
         if pc == stop:
@@ -146,6 +156,17 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                 result = 0 if runtime_variant == 11 else 1
                 if result: tls[read(sp+4)] = read(sp+8)
             elif name in ('EncodePointer', 'DecodePointer'): result = read(sp+4) ^ 0xa5a55a5a
+            elif name == 'inline_small_string':
+                obj, source = uc.reg_read(UC_X86_REG_ECX), read(sp+4)
+                data = bytes(uc.mem_read(source, 16))
+                length = data.index(0)
+                write(obj, obj+12); write(obj+4, length); write(obj+8, 15)
+                uc.mem_write(obj+12, data[:length+1])
+                result = obj
+            elif name == 'memset':
+                destination, value, count = read(sp+4), read(sp+8) & 0xff, read(sp+12)
+                uc.mem_write(destination, bytes([value]) * count)
+                result = destination
             elif name == 'FlsAlloc':
                 if read(sp+4) != 0xf22d03: raise RuntimeError('unexpected FLS cleanup callback')
                 result = 0xffffffff if runtime_variant == 17 else 9
@@ -234,6 +255,45 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
             elif name == 'allocation_size':
                 if not read(sp+4): raise RuntimeError('unexpected null allocation')
                 result = 128
+            elif name == 'reallocate':
+                old, size = read(sp+4), read(sp+8)
+                if size != 256: raise RuntimeError(f'unexpected original atexit growth size {size}')
+                result = heap_state['next']
+                uc.mem_write(result, bytes(uc.mem_read(old, 128)) + bytes(size-128))
+                heap_state['next'] = (result+size+15)&~15
+            elif name == 'game_allocate':
+                descriptor, size, count = read(sp+4), read(sp+8), read(sp+12)
+                if descriptor != 0x128f238 or count != 1 or not size:
+                    raise RuntimeError(f'unexpected original game allocation {[descriptor, size, count]}')
+                result = heap_state['next']
+                total = size * count
+                uc.mem_write(result, bytes(total))
+                heap_state['next'] = (result+total+15)&~15
+            elif name == 'manager_register':
+                manager = uc.reg_read(UC_X86_REG_ECX)
+                obj, name_ptr = read(sp+4), read(sp+8)
+                if manager != read(0x131ad88) or obj not in (0x131ad98, 0x131ae20) or name_ptr != 0x10b0a38:
+                    raise RuntimeError(f'unexpected original manager registration {[manager, obj, name_ptr]}')
+                item, cursor = read(manager), read(manager+4)
+                existing = 0
+                while item < cursor:
+                    node = read(item)
+                    if read(node+0x14) == name_ptr:
+                        existing = node
+                        break
+                    item += 4
+                if existing:
+                    write(obj+0x10, existing)
+                else:
+                    node = heap_state['next']
+                    uc.mem_write(node, bytes(0x20))
+                    write(node+0x14, name_ptr); write(node+0x1c, 0xffffffff)
+                    cursor = read(manager+4)
+                    if not cursor or cursor+4 > read(manager+8):
+                        raise RuntimeError('original manager vector was not initialized')
+                    write(cursor, node); write(manager+4, cursor+4); write(obj+0x10, node)
+                    heap_state['next'] = (node+0x20+15)&~15
+                result = 0
             elif name == 'strrchr':
                 ptr, needle = read(sp+4), read(sp+8) & 0xff
                 value = bytes(uc.mem_read(ptr, 0x1000)).split(b'\0')[0]
@@ -277,6 +337,94 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), argc, argv, heap_state['next'],
                  pointers, data, calls), visited)
+    if constructor_forty_eight_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        shared = read(0x131ad88)
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), shared, heap_state['next'],
+                 bytes(uc.mem_read(0x131ae20, 0xa0)).hex(),
+                 bytes(uc.mem_read(shared, heap_state['next']-shared)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_forty_seven_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), read(0x131ad88), heap_state['next'],
+                 bytes(uc.mem_read(0x131ad98, 0x88)).hex(),
+                 bytes(uc.mem_read(read(0x131ad88), heap_state['next']-read(0x131ad88))).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_forty_six_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), read(0x131acb0),
+                 bytes(uc.mem_read(0x80000, 0x1c)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_forty_five_case:
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), read(0x131c360),
+                 bytes(uc.mem_read(0x131ac9c, 20)).hex(), calls), visited)
+    if constructor_forty_four_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX),
+                 bytes(uc.mem_read(0x131ac80, 20)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_forty_three_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), read(0x128d96c),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_forty_one_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX),
+                 bytes(uc.mem_read(0x131a958, 0x1d0)).hex(),
+                 bytes(uc.mem_read(0x128d594, 8)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_thirty_seven_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX),
+                 bytes(uc.mem_read(0x131a024, 0x58)).hex(),
+                 read(0x131a950), read(0x131a9e0), read(0x131a954),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_thirty_three_case:
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), read(0x1317f3c),
+                 read(0x1317f38), calls), visited)
+    if constructor_thirty_two_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX),
+                 bytes(uc.mem_read(0x1316d7c, 16)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_twenty_five_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX),
+                 bytes(uc.mem_read(0x1316bc0, 0x1a5)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_twenty_four_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_twenty_two_case:
+        begin = read(0x1359da8) ^ 0xa5a55a5a
+        end = read(0x1359da4) ^ 0xa5a55a5a
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
+                 uc.reg_read(UC_X86_REG_EAX), read(0x1316920),
+                 bytes(uc.mem_read(0x1316924,0x268)).hex(),
+                 bytes(uc.mem_read(begin,end-begin)).hex(), calls), visited)
     if constructor_twelve_case:
         begin = read(0x1359da8) ^ 0xa5a55a5a
         end = read(0x1359da4) ^ 0xa5a55a5a
@@ -357,8 +505,128 @@ def main():
     if hashlib.sha256(image).hexdigest() != DIGEST:
         raise RuntimeError('reference executable hash mismatch')
     output = subprocess.check_output([str(args.native.resolve()), '.', '--startup'], text=True)
-    cases, frame_cases, runtime_cases, allocator_cases, locale_cases, environment_cases, argv_cases, envp_cases, cinit_cases, preinitializer_cases, atexit_cases, constructor_cases, constructor_two_cases, constructor_three_cases, constructor_four_cases, constructor_eight_cases, constructor_nine_cases, constructor_twelve_cases, visited = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, set()
+    cases, frame_cases, runtime_cases, allocator_cases, locale_cases, environment_cases, argv_cases, envp_cases, cinit_cases, preinitializer_cases, atexit_cases, constructor_cases, constructor_two_cases, constructor_three_cases, constructor_four_cases, constructor_eight_cases, constructor_nine_cases, constructor_twelve_cases, constructor_twenty_two_cases, constructor_twenty_four_cases, constructor_twenty_five_cases, constructor_thirty_two_cases, constructor_thirty_three_cases, constructor_thirty_seven_cases, constructor_forty_one_cases, constructor_forty_three_cases, constructor_forty_four_cases, constructor_forty_five_cases, constructor_forty_six_cases, constructor_forty_seven_cases, constructor_forty_eight_cases, visited = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, set()
     for line in output.splitlines():
+        if line.startswith('STARTUP_CONSTRUCTOR_048_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_forty_eight_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','shared','next')) + (fields['object'], fields['manager'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor forty-eight mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_forty_eight_cases += 1
+            print('STARTUP_CONSTRUCTOR_048_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_047_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_forty_seven_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','shared','next')) + (fields['object'], fields['manager'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor forty-seven mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_forty_seven_cases += 1
+            print('STARTUP_CONSTRUCTOR_047_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_046_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_forty_six_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','pointer')) + (fields['object'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor forty-six mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_forty_six_cases += 1
+            print('STARTUP_CONSTRUCTOR_046_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_045_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            variant = int(fields['variant'])
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_forty_five_case=variant + 1)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','source')) + (fields['object'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor forty-five mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_forty_five_cases += 1
+            print('STARTUP_CONSTRUCTOR_045_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_044_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_forty_four_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax')) + (fields['object'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor forty-four mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_forty_four_cases += 1
+            print('STARTUP_CONSTRUCTOR_044_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_043_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_forty_three_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','counter')) + (fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor forty-three mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_forty_three_cases += 1
+            print('STARTUP_CONSTRUCTOR_043_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_041_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_forty_one_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax')) + (fields['objects'], fields['scalars'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor forty-one mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_forty_one_cases += 1
+            print('STARTUP_CONSTRUCTOR_041_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_037_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_thirty_seven_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax')) + (fields['digest'],) + tuple(int(fields[key],16) for key in ('scalar','pool','interned')) + (fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor thirty-seven mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_thirty_seven_cases += 1
+            print('STARTUP_CONSTRUCTOR_037_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_033_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_thirty_three_case=True)
+            timer = fields['timer']
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax')) + (int(timer[:8],16), int(timer[8:],16), [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor thirty-three mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_thirty_three_cases += 1
+            print('STARTUP_CONSTRUCTOR_033_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_032_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_thirty_two_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax')) + (fields['globals'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor thirty-two mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_thirty_two_cases += 1
+            print('STARTUP_CONSTRUCTOR_032_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_025_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_twenty_five_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax')) + (fields['object'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor twenty-five mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_twenty_five_cases += 1
+            print('STARTUP_CONSTRUCTOR_025_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_024_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_twenty_four_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax')) + (fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor twenty-four mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_twenty_four_cases += 1
+            print('STARTUP_CONSTRUCTOR_024_READY original-x86=MATCH')
+            continue
+        if line.startswith('STARTUP_CONSTRUCTOR_022_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:])
+            stop = int(fields['stop'], 16)
+            variant = int(fields['variant'])
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_twenty_two_case=True, constructor_twenty_two_seed=variant)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','head')) + (fields['objects'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor twenty-two mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_twenty_two_cases += 1
+            print('STARTUP_CONSTRUCTOR_022_READY original-x86=MATCH')
+            continue
         if line.startswith('STARTUP_CONSTRUCTOR_012_READY '):
             fields = dict(item.split('=') for item in line.split()[1:])
             stop = int(fields['stop'], 16)
@@ -547,12 +815,25 @@ def main():
     if constructor_eight_cases != 1: raise RuntimeError(f'expected one constructor eight case, got {constructor_eight_cases}')
     if constructor_nine_cases != 1: raise RuntimeError(f'expected one constructor nine case, got {constructor_nine_cases}')
     if constructor_twelve_cases != 1: raise RuntimeError(f'expected one constructor twelve case, got {constructor_twelve_cases}')
+    if constructor_twenty_two_cases != 3: raise RuntimeError(f'expected three constructor twenty-two cases, got {constructor_twenty_two_cases}')
+    if constructor_twenty_four_cases != 1: raise RuntimeError(f'expected one constructor twenty-four case, got {constructor_twenty_four_cases}')
+    if constructor_twenty_five_cases != 1: raise RuntimeError(f'expected one constructor twenty-five case, got {constructor_twenty_five_cases}')
+    if constructor_thirty_two_cases != 1: raise RuntimeError(f'expected one constructor thirty-two case, got {constructor_thirty_two_cases}')
+    if constructor_thirty_three_cases != 1: raise RuntimeError(f'expected one constructor thirty-three case, got {constructor_thirty_three_cases}')
+    if constructor_thirty_seven_cases != 1: raise RuntimeError(f'expected one constructor thirty-seven case, got {constructor_thirty_seven_cases}')
+    if constructor_forty_one_cases != 1: raise RuntimeError(f'expected one constructor forty-one case, got {constructor_forty_one_cases}')
+    if constructor_forty_three_cases != 1: raise RuntimeError(f'expected one constructor forty-three case, got {constructor_forty_three_cases}')
+    if constructor_forty_four_cases != 1: raise RuntimeError(f'expected one constructor forty-four case, got {constructor_forty_four_cases}')
+    if constructor_forty_five_cases != 2: raise RuntimeError(f'expected two constructor forty-five cases, got {constructor_forty_five_cases}')
+    if constructor_forty_six_cases != 1: raise RuntimeError(f'expected one constructor forty-six case, got {constructor_forty_six_cases}')
+    if constructor_forty_seven_cases != 1: raise RuntimeError(f'expected one constructor forty-seven case, got {constructor_forty_seven_cases}')
+    if constructor_forty_eight_cases != 1: raise RuntimeError(f'expected one constructor forty-eight case, got {constructor_forty_eight_cases}')
     from startup_lift import discover, RANGES, STOPS
     code = discover(image, ENTRY, RANGES, STOPS, IMPORTS)
     missing = set(code)-visited
     if missing:
         raise RuntimeError(f'unexercised instructions: {sorted(missing)}')
-    print(f'PASS: {cases} cookie, {frame_cases} frame, {runtime_cases} runtime, {allocator_cases} allocator, {locale_cases} locale, {environment_cases} environment, {argv_cases} argv, {envp_cases} envp, {cinit_cases} cinit, {preinitializer_cases} preinitializer, {atexit_cases} atexit, {constructor_cases + constructor_two_cases + constructor_three_cases + constructor_four_cases + constructor_eight_cases + constructor_nine_cases + constructor_twelve_cases} constructor original-x86 comparisons; all {len(code)} reachable instructions exercised.')
+    print(f'PASS: {cases} cookie, {frame_cases} frame, {runtime_cases} runtime, {allocator_cases} allocator, {locale_cases} locale, {environment_cases} environment, {argv_cases} argv, {envp_cases} envp, {cinit_cases} cinit, {preinitializer_cases} preinitializer, {atexit_cases} atexit, {constructor_cases + constructor_two_cases + constructor_three_cases + constructor_four_cases + constructor_eight_cases + constructor_nine_cases + constructor_twelve_cases + constructor_twenty_two_cases + constructor_twenty_four_cases + constructor_twenty_five_cases + constructor_thirty_two_cases + constructor_thirty_three_cases + constructor_thirty_seven_cases + constructor_forty_one_cases + constructor_forty_three_cases + constructor_forty_four_cases + constructor_forty_five_cases + constructor_forty_six_cases + constructor_forty_seven_cases + constructor_forty_eight_cases} constructor original-x86 comparisons; all {len(code)} reachable instructions exercised.')
 
 if __name__ == '__main__':
     main()

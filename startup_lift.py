@@ -26,8 +26,14 @@ STOPS = {0xF23011, 0xF23016, 0xF17C56, 0xF22EB4, 0xF17C67,
          0xF227A0, 0xF227B7, 0xF1A8FC,
          0xF226F1, 0xF22704, 0xF22707,
          0xF17A06, 0xF17A24, 0xF17A3D, 0xF17A90, 0xF182D6,
-         0xF18245, 0xF182AA,
+         0xF18265, 0xF182AA,
          0x42507E,
+         0x423B34,
+         0x10676F3,
+         0x43EDFE, 0x43EE1F, 0x43EE08, 0x43EE26, 0x43EE6C, 0x43EECE, 0x43EEE9,
+         0x422D2F,
+         0x41D209,
+         0x1067529,
          0xF2D4F3, 0xF1A754, 0xF303A5, 0xF303E3, 0xF21D4B, 0xF22AC4,
          0xF21E59, 0xF21F70}
 COOKIE = 0x1310B30
@@ -57,6 +63,14 @@ RANGES = ((ENTRY, ENTRY + 10), (0xF23039, 0xF230D4),
           (0x1067260, 0x106726A), (0x402B40, 0x402B79),
           (0x1067270, 0x10672B7), (0x10672C0, 0x10672CC),
           (0x10672D0, 0x10672DC),
+          (0x10672E0, 0x1067810), (0x4172E0, 0x41739C),
+          (0x43ED70, 0x43EF2C), (0x43D3D0, 0x43D413),
+          (0x422CF0, 0x422D61),
+          (0x48BC20, 0x48BC5C), (0x48BBE0, 0x48BC14),
+          (0x423B10, 0x423B6A),
+          (0x419DF0, 0x419F96),
+          (0x41D1F0, 0x41D209), (0x41D2EF, 0x41D305),
+          (0x446700, 0x446739),
           (0x424B60, 0x424BE1), (0x423B70, 0x423BCD),
           (0xF22B05, 0xF22B0E),
           (0xF2071E, 0xF20787), (0xF22AFC, 0xF22B05),
@@ -98,16 +112,22 @@ IMPORTS = {0x10A7268: ('GetSystemTimeAsFileTime', 1),
            0xF26890: ('strlen', 1),
            0xF28C15: ('copy_s', 3),
            0xF1F0DC: ('free', 1),
+           0xF18390: ('memset', 3),
            0xF26500: ('is_nonwritable_image_pointer', 1),
            0xF18111: ('raw_dll_main', 1)}
 IMPORTS.update({0x10A7308: ('IsProcessorFeaturePresent', 1),
                 0x10A7160: ('SetUnhandledExceptionFilter', 1),
                 0xF23CFF: ('allocation_size', 1),
+                0xF2209F: ('reallocate', 2),
+                0x4132A0: ('game_allocate', 3),
+                0x43EB90: ('manager_register', 2),
                 0xF1ABC0: ('strrchr', 2),
+                0x415B30: ('inline_small_string', 1),
                 0x423280: ('string_pool_init', 0),
                 0x423730: ('intern_string', 3)})
-CDECL_IMPORTS = {0xF25852, 0xF30820, 0xF26890, 0xF28C15, 0xF1F0DC,
-                 0xF26500, 0xF18111, 0xF23CFF, 0xF1ABC0, 0x423280}
+CDECL_IMPORTS = {0xF25852, 0xF30820, 0xF26890, 0xF28C15, 0xF1F0DC, 0xF18390, 0xF2209F,
+                0xF26500, 0xF18111, 0xF23CFF, 0xF1ABC0, 0x423280}
+CDECL_IMPORTS.add(0x4132A0)
 INDIRECT_IMPORTS = {pc: 0x10A70A8 for pc in (0xF22ECA, 0xF22ED7, 0xF22EE4, 0xF22EF1)}
 INDIRECT_IMPORTS.update({0xF22F5C: 0x10A72F0})
 INDIRECT_IMPORTS.update({pc: 0x10A7284 for pc in (0xF22F77, 0xF22F84, 0xF22F91, 0xF22F9E)})
@@ -127,12 +147,30 @@ INDIRECT_TARGETS[0xF2077A] = (0xF179F2, 0xF182B1, 0xF192AB, 0xF231D7,
 INDIRECT_TARGETS[0xF207EB] = (0x10670D0, 0x10670F0, 0x1067120, 0x1067150,
                               0x1067180, 0x10671D0, 0x1067200, 0x1067210,
                               0x1067260, 0x1067270, 0x10672C0, 0x10672D0)
+INDIRECT_TARGETS[0xF207EB] += tuple(range(0x10672E0, 0x1067440, 0x20))
+INDIRECT_TARGETS[0xF207EB] += (0x1067430,)
+INDIRECT_TARGETS[0xF207EB] += (0x1067440,)
+INDIRECT_TARGETS[0xF207EB] += tuple(range(0x1067460, 0x10674D0, 0x10))
+INDIRECT_TARGETS[0xF207EB] += (0x10674D0,)
+INDIRECT_TARGETS[0xF207EB] += (0x10674F0, 0x1067500, 0x1067510, 0x1067520)
+INDIRECT_TARGETS[0xF207EB] += (0x1067560, 0x1067570, 0x1067580, 0x10675E0)
+INDIRECT_TARGETS[0xF207EB] += (0x1067630, 0x1067640)
+INDIRECT_TARGETS[0xF207EB] += (0x1067650, 0x1067670, 0x10676A0, 0x1067710, 0x1067780)
 DIGEST = '614c08f25b531d590c5aa6d9cf35b1e406e83d35fbd50e61188f19247fb176ae'
 
 
 def translate(insn):
     """Startup arithmetic that can report a guest divide fault to its caller."""
     args = insn.operands
+    if insn.mnemonic == 'comiss' and len(args) == 2:
+        lhs = 'r.xmm0'
+        rhs = f'm.read32({lift.address(insn, args[1].mem)})'
+        return [f'let lhs = f32::from_bits({lhs} as u32);',
+                f'let rhs = f32::from_bits({rhs} as u32);',
+                'let unordered = lhs.is_nan() || rhs.is_nan();',
+                'r.carry = unordered || lhs < rhs;',
+                'r.zero = unordered || lhs == rhs;',
+                'r.overflow = false;', 'r.sign = false;']
     if insn.mnemonic == 'div' and len(args) == 1 and args[0].size == 4:
         return [f'let divisor = u64::from({lift.value(insn, args[0])});',
                 'let dividend = (u64::from(r.edx) << 32) | u64::from(r.eax);',
@@ -148,7 +186,7 @@ def translate(insn):
     return lift.translate(insn)
 
 
-def discover(image, entry, ranges, stops, imports, limit=2048):
+def discover(image, entry, ranges, stops, imports, limit=4096):
     base, sections = lift.pe_sections(image)
     decoder = lift.Cs(lift.CS_ARCH_X86, lift.CS_MODE_32)
     decoder.detail = True
@@ -237,7 +275,7 @@ def generate_startup(image):
                     argc = IMPORTS[target][1]
                     cleanup = 1 if target in CDECL_IMPORTS else argc + 1
                     lines += ['r.esp -= 4;', f'm.write32(r.esp, {following:#x});',
-                              f'r.eax = m.import({target:#x}, r.esp + 4)?;',
+                              f'r.eax = m.import({target:#x}, r.esp + 4, r.ecx)?;',
                               f'r.esp += {cleanup*4};', f'pc = {following:#x};']
                 else:
                     lines += ['r.esp -= 4;', f'm.write32(r.esp, {following:#x});', f'pc = {target:#x};']
@@ -248,7 +286,7 @@ def generate_startup(image):
                     if target in IMPORTS:
                         argc = IMPORTS[target][1]
                         cleanup = 1 if target in CDECL_IMPORTS else argc + 1
-                        lines.append(f'{target:#x} => {{ r.eax = m.import(target, r.esp + 4)?; r.esp += {cleanup*4}; pc = {following:#x}; }},')
+                        lines.append(f'{target:#x} => {{ r.eax = m.import(target, r.esp + 4, r.ecx)?; r.esp += {cleanup*4}; pc = {following:#x}; }},')
                     else:
                         lines.append(f'{target:#x} => {{ pc = target; }},')
                 lines += ['_ if target == stop => { m.stack = r.esp; m.frame = r.ebp; m.eax = r.eax; return Ok(()); },',
@@ -259,7 +297,7 @@ def generate_startup(image):
                 if args[0].type == lift.X86_OP_REG:
                     lines.append(f'if {lift.value(insn, args[0])} != {slot:#x} {{ return Err(format!("unresolved indirect call at {pc:#x}")); }}')
                 lines += ['r.esp -= 4;', f'm.write32(r.esp, {following:#x});',
-                          f'r.eax = m.import({slot:#x}, r.esp + 4)?;',
+                          f'r.eax = m.import({slot:#x}, r.esp + 4, r.ecx)?;',
                           f'r.esp += {(argc+1)*4};', f'pc = {following:#x};']
         elif op == 'ret':
             cleanup = args[0].imm if args else 0
