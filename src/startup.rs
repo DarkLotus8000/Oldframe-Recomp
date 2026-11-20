@@ -128,9 +128,7 @@ impl Memory {
                 Ok(if self.module_present { 0x70000000 } else { 0 })
             }
             0x10a70a8 => {
-                if self.read32(stack) != 0x70000000 {
-                    return Err("unexpected module token".into());
-                }
+                let module = self.read32(stack);
                 let ptr = self.read32(stack + 4) as usize;
                 let len = self.bytes[ptr..]
                     .iter()
@@ -142,11 +140,17 @@ impl Memory {
                     b"FlsGetValue",
                     b"FlsSetValue",
                     b"FlsFree",
+                    b"GetFinalPathNameByHandleW",
                 ]
                 .iter()
                 .position(|candidate| *candidate == name)
                 .ok_or("unexpected dynamic API name")?;
-                Ok(if self.fls_mask & (1 << index) != 0 {
+                if (index == 4 && module != 0x90000)
+                    || (index != 4 && module != 0x70000000)
+                {
+                    return Err("unexpected module token".into());
+                }
+                Ok(if index == 4 || self.fls_mask & (1 << index) != 0 {
                     0x50000 + index as u32 * 16
                 } else {
                     0
@@ -211,12 +215,18 @@ impl Memory {
                 self.heap_next = (end + 15) & !15;
                 Ok(ptr)
             }
+            0x418e10 => {
+                if self.read32(stack) != 0x10abd8c {
+                    return Err("unexpected library name".into());
+                }
+                Ok(0x90000)
+            }
             0x43eb90 => {
                 let object = self.read32(stack);
                 let name = self.read32(stack + 4);
                 if ecx != self.read32(0x131ad88)
-                    || ![0x131ad98, 0x131ae20].contains(&object)
-                    || name != 0x10b0a38
+                    || ![0x131ad98, 0x131ae20, 0x131aec0, 0x131af48].contains(&object)
+                    || ![0x10b0a38, 0x10b07d4].contains(&name)
                 {
                     return Err(format!("unexpected manager registration {ecx:#x}, {object:#x}, {name:#x}"));
                 }
@@ -244,6 +254,56 @@ impl Memory {
                 self.heap_next = (end + 15) & !15;
                 Ok(0)
             }
+            0x44aae0 => {
+                let position = self.read32(stack);
+                let count = self.read32(stack + 4);
+                let source = self.read32(stack + 8);
+                let begin = self.read32(ecx);
+                let end = self.read32(ecx + 4);
+                let capacity = self.read32(ecx + 8);
+                if ecx != 0x131b1f0 || position != end || count != 1 || end != capacity {
+                    return Err(format!("unexpected singleton vector insertion {ecx:#x}, {position:#x}, {count}, {source:#x}"));
+                }
+                let existing = if begin == 0 { 0 } else { end.wrapping_sub(begin) / 4 };
+                if existing > 1 {
+                    return Err(format!("unexpected singleton vector length {existing}"));
+                }
+                let ptr = self.heap_next;
+                let bytes = (existing + 1) * 4;
+                let allocation_end = ptr.checked_add(bytes).ok_or("singleton vector allocation overflow")?;
+                if allocation_end > 0x100000 { return Err("guest heap arena exhausted during singleton insertion".into()); }
+                for index in 0..existing {
+                    self.write32(ptr + index * 4, self.read32(begin + index * 4));
+                }
+                self.write32(ptr + existing * 4, self.read32(source));
+                self.write32(ecx, ptr);
+                self.write32(ecx + 4, allocation_end);
+                self.write32(ecx + 8, allocation_end);
+                self.heap_next = (allocation_end + 15) & !15;
+                Ok(0)
+            }
+            0x478d10 => {
+                let position = self.read32(stack);
+                let count = self.read32(stack + 4);
+                let source = self.read32(stack + 8);
+                let begin = self.read32(ecx);
+                let end = self.read32(ecx + 4);
+                let capacity = self.read32(ecx + 8);
+                if ![0x131c2ac, 0x131c2c4].contains(&ecx)
+                    || position != begin || count != 1 || begin != end || end != capacity
+                {
+                    return Err(format!("unexpected byte-vector insertion {ecx:#x}, {position:#x}, {count}, {source:#x}"));
+                }
+                let ptr = self.heap_next;
+                let allocation_end = ptr.checked_add(1).ok_or("byte-vector allocation overflow")?;
+                if allocation_end > 0x100000 { return Err("guest heap arena exhausted during byte-vector insertion".into()); }
+                self.write8(ptr, self.read8(source));
+                self.write32(ecx, ptr);
+                self.write32(ecx + 4, ptr + 1);
+                self.write32(ecx + 8, ptr + 1);
+                self.heap_next = (allocation_end + 15) & !15;
+                Ok(0)
+            }
             0xf1abc0 => {
                 let ptr = self.read32(stack);
                 let needle = self.read32(stack + 4) as u8;
@@ -266,11 +326,77 @@ impl Memory {
                 let start = source as usize;
                 let length = self.bytes[start..].iter().position(|byte| *byte == 0)
                     .ok_or("unterminated small string input")?;
-                if length > 15 { return Err("small string boundary requires allocation".into()); }
-                self.write32(ecx, ecx + 12);
+                let destination = if length > 15 {
+                    let ptr = self.heap_next;
+                    let end = ptr.checked_add(length as u32 + 1).ok_or("small string allocation overflow")?;
+                    if end > 0x100000 { return Err("guest heap arena exhausted during string allocation".into()); }
+                    self.heap_next = (end + 15) & !15;
+                    ptr
+                } else {
+                    ecx + 12
+                };
+                self.write32(ecx, destination);
                 self.write32(ecx + 4, length as u32);
-                self.write32(ecx + 8, 15);
-                self.bytes.copy_within(start..start + length + 1, (ecx + 12) as usize);
+                self.write32(ecx + 8, if length > 15 { length as u32 } else { 15 });
+                self.bytes.copy_within(start..start + length + 1, destination as usize);
+                Ok(ecx)
+            }
+            0x415ae0 => {
+                let source = self.read32(stack);
+                let source_ptr = self.read32(source);
+                let length = self.read32(source + 4);
+                let destination = if length > 15 {
+                    let ptr = self.heap_next;
+                    let end = ptr.checked_add(length + 1).ok_or("copied string allocation overflow")?;
+                    if end > 0x100000 { return Err("guest heap arena exhausted during string copy".into()); }
+                    self.heap_next = (end + 15) & !15;
+                    ptr
+                } else {
+                    ecx + 12
+                };
+                self.write32(ecx, destination);
+                self.write32(ecx + 4, length);
+                self.write32(ecx + 8, if length > 15 { length } else { 15 });
+                self.bytes.copy_within(source_ptr as usize..source_ptr as usize + length as usize + 1, destination as usize);
+                Ok(ecx)
+            }
+            0x415e80 => {
+                let destination_object = self.read32(stack);
+                let source_object = self.read32(stack + 4);
+                let suffix_ptr = self.read32(stack + 8);
+                let source_ptr = self.read32(source_object);
+                let source_len = self.read32(source_object + 4) as usize;
+                let suffix_start = suffix_ptr as usize;
+                let suffix_len = self.bytes[suffix_start..].iter().position(|byte| *byte == 0)
+                    .ok_or("unterminated concatenation suffix")?;
+                let length = source_len + suffix_len;
+                let destination = if length > 15 {
+                    let ptr = self.heap_next;
+                    let end = ptr.checked_add(length as u32 + 1).ok_or("concatenated string allocation overflow")?;
+                    if end > 0x100000 { return Err("guest heap arena exhausted during string concatenation".into()); }
+                    self.heap_next = (end + 15) & !15;
+                    ptr
+                } else {
+                    destination_object + 12
+                };
+                self.write32(destination_object, destination);
+                self.write32(destination_object + 4, length as u32);
+                self.write32(destination_object + 8, if length > 15 { length as u32 } else { 15 });
+                self.bytes.copy_within(source_ptr as usize..source_ptr as usize + source_len, destination as usize);
+                self.bytes.copy_within(suffix_start..suffix_start + suffix_len, destination as usize + source_len);
+                self.write8(destination + length as u32, 0);
+                Ok(destination_object)
+            }
+            0x4137d0 => {
+                if self.read32(stack) != 0x128cad0 {
+                    return Err("unexpected game-free descriptor".into());
+                }
+                Ok(0)
+            }
+            0xf17ba1 => {
+                if ecx != self.read32(COOKIE) {
+                    return Err("security cookie mismatch".into());
+                }
                 Ok(ecx)
             }
             0x423280 => Ok(0x131a960),
@@ -541,6 +667,33 @@ pub fn run_checkpoints() -> Result<(), String> {
     run_constructor_forty_six_checkpoints()?;
     run_constructor_forty_seven_checkpoints()?;
     run_constructor_forty_eight_checkpoints()?;
+    run_constructor_forty_nine_checkpoints()?;
+    run_constructor_fifty_checkpoints()?;
+    run_constructor_fifty_one_checkpoints()?;
+    run_constructor_fifty_two_checkpoints()?;
+    run_constructor_fifty_three_checkpoints()?;
+    run_constructor_fifty_five_checkpoints()?;
+    run_constructor_fifty_six_checkpoints()?;
+    run_constructor_fifty_seven_checkpoints()?;
+    run_constructor_fifty_eight_checkpoints()?;
+    run_constructor_fifty_nine_checkpoints()?;
+    run_constructor_sixty_checkpoints()?;
+    run_constructor_sixty_one_checkpoints()?;
+    run_constructor_sixty_two_checkpoints()?;
+    run_constructor_sixty_five_checkpoints()?;
+    run_constructor_seventy_three_checkpoints()?;
+    run_constructor_seventy_four_checkpoints()?;
+    run_constructor_eighty_seven_checkpoints()?;
+    run_constructor_ninety_one_checkpoints()?;
+    run_constructor_ninety_two_checkpoints()?;
+    run_constructor_one_hundred_two_checkpoints()?;
+    run_constructor_one_hundred_ten_checkpoints()?;
+    run_constructor_one_hundred_eleven_checkpoints()?;
+    run_constructor_one_hundred_sixteen_checkpoints()?;
+    run_constructor_one_hundred_seventeen_checkpoints()?;
+    run_constructor_one_hundred_twenty_eight_checkpoints()?;
+    run_constructor_one_hundred_twenty_nine_checkpoints()?;
+    run_constructor_one_hundred_thirty_checkpoints()?;
     run_allocator_checkpoints()?;
     run_locale_checkpoints()?;
     Ok(())
@@ -1026,6 +1179,469 @@ fn run_constructor_forty_eight_checkpoints() -> Result<(), String> {
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_048_READY stop=01067810 stack={:08x} frame={:08x} eax={:08x} shared={shared:08x} next={:08x} object={object} manager={manager} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_forty_nine_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067880)?;
+    let object = m.bytes[0x131aec0..0x131af48]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let shared = m.read32(0x131ad88);
+    let manager = m.bytes[shared as usize..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_049_READY stop=01067880 stack={:08x} frame={:08x} eax={:08x} shared={shared:08x} next={:08x} object={object} manager={manager} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_fifty_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067910)?;
+    let object = m.bytes[0x131af48..0x131afe0]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let shared = m.read32(0x131ad88);
+    let manager = m.bytes[shared as usize..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_050_READY stop=01067910 stack={:08x} frame={:08x} eax={:08x} shared={shared:08x} next={:08x} object={object} manager={manager} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_fifty_one_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067930)?;
+    let vector = m.bytes[0x128eb94..0x128eba0]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_051_READY stop=01067930 stack={:08x} frame={:08x} eax={:08x} next={:08x} vector={vector} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_fifty_two_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067950)?;
+    let object = m.bytes[0x131aff8..0x131b194]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_052_READY stop=01067950 stack={:08x} frame={:08x} eax={:08x} object={object} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_fifty_three_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067980)?;
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_053_READY stop=01067980 stack={:08x} frame={:08x} eax={:08x} module={:08x} function={:08x} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.read32(0x131b1b8), m.read32(0x131b1bc),
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_fifty_five_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x10679a0)?;
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_055_READY stop=010679a0 stack={:08x} frame={:08x} eax={:08x} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_fifty_six_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x10679c0)?;
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_056_READY stop=010679c0 stack={:08x} frame={:08x} eax={:08x} object={:08x} counter={:08x} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.read32(0x131b1c8), m.read32(0x128d970),
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_fifty_seven_checkpoints() -> Result<(), String> {
+    for variant in 0..2 {
+        let mut m = seh_memory(0, 0xffffffff);
+        m.heap_result = 0x60000;
+        if variant == 1 {
+            m.write8(0x131b234, 1);
+            m.write32(0x131b1f0, 0x80000);
+            m.write32(0x131b1f4, 0x80000);
+            m.write32(0x131b1f8, 0x80004);
+        }
+        translated::run(&mut m, 0x1067a10)?;
+        let singleton = m.bytes[0x131b1e0..0x131b230]
+            .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+        let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+        let callbacks = m.bytes[begin as usize..end as usize]
+            .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        println!("STARTUP_CONSTRUCTOR_057_READY variant={variant} stop=01067a10 stack={:08x} frame={:08x} eax={:08x} next={:08x} item={:08x} singleton={singleton} callbacks={callbacks} calls={}",
+            m.stack, m.frame, m.eax, m.heap_next, m.read32(0x80000),
+            m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    }
+    Ok(())
+}
+
+fn run_constructor_fifty_eight_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067a20)?;
+    println!("STARTUP_CONSTRUCTOR_058_READY stop=01067a20 stack={:08x} frame={:08x} eax={:08x} value={:08x} calls={}",
+        m.stack, m.frame, m.eax, m.read32(0x131b238),
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_fifty_nine_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067a50)?;
+    let object = m.bytes[0x131b23c..0x131b24c]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_059_READY stop=01067a50 stack={:08x} frame={:08x} eax={:08x} object={object} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_sixty_checkpoints() -> Result<(), String> {
+    for variant in 0..2 {
+        let mut m = seh_memory(0, 0xffffffff);
+        m.heap_result = 0x60000;
+        if variant == 1 {
+            m.write8(0x131b234, 1);
+            m.write32(0x131b1f0, 0x80000);
+            m.write32(0x131b1f4, 0x80000);
+            m.write32(0x131b1f8, 0x80008);
+        }
+        translated::run(&mut m, 0x1067aa0)?;
+        let singleton = m.bytes[0x131b1e0..0x131b230]
+            .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        let vector = m.read32(0x131b1f0);
+        let items = m.bytes[vector as usize..m.read32(0x131b1f4) as usize]
+            .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        println!("STARTUP_CONSTRUCTOR_060_READY variant={variant} stop=01067aa0 stack={:08x} frame={:08x} eax={:08x} next={:08x} object={:08x} singleton={singleton} items={items} calls={}",
+            m.stack, m.frame, m.eax, m.heap_next, m.read32(0x128fbb0),
+            m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    }
+    Ok(())
+}
+
+fn run_constructor_sixty_one_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067ad0)?;
+    let object = m.bytes[0x131b24c..0x131b25c]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_061_READY stop=01067ad0 stack={:08x} frame={:08x} eax={:08x} object={object} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_sixty_two_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067b00)?;
+    let object = m.bytes[0x131b25c..0x131b26c]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_062_READY stop=01067b00 stack={:08x} frame={:08x} eax={:08x} object={object} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_sixty_five_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067ba0)?;
+    let objects = m.bytes[0x131b26c..0x131b350]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_065_READY stop=01067ba0 stack={:08x} frame={:08x} eax={:08x} objects={objects} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_seventy_three_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067e00)?;
+    let objects = m.bytes[0x131b358..0x131b808]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_073_READY stop=01067e00 stack={:08x} frame={:08x} eax={:08x} objects={objects} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_seventy_four_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1067e20)?;
+    let object = m.bytes[0x131b808..0x131b878]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_074_READY stop=01067e20 stack={:08x} frame={:08x} eax={:08x} count_a={:08x} count_b={:08x} object={object} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.read32(0x128d96c), m.read32(0x128d970),
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_eighty_seven_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1068060)?;
+    let state = m.bytes[0x131b878..0x131be38]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let string_ptr = m.read32(0x131ba9c);
+    let string = m.bytes[string_ptr as usize..string_ptr as usize + 24]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_087_READY stop=01068060 stack={:08x} frame={:08x} eax={:08x} next={:08x} counter={:08x} state={state} string={string} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next, m.read32(0x128d970),
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_ninety_one_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x10681a0)?;
+    let state = m.bytes[0x131be38..0x131c198]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_091_READY stop=010681a0 stack={:08x} frame={:08x} eax={:08x} state={state} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_ninety_two_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x10681c0)?;
+    let object = m.bytes[0x131c198..0x131c2e4]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let first = m.read32(0x131c2ac);
+    let second = m.read32(0x131c2c4);
+    let items = format!("{:02x}{:02x}", m.read8(first), m.read8(second));
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_092_READY stop=010681c0 stack={:08x} frame={:08x} eax={:08x} next={:08x} counter={:08x} object={object} items={items} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next, m.read32(0x128d970),
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_one_hundred_two_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x10682c0)?;
+    let state = m.bytes[0x131c2e4..0x131c4d4]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let string_ptr = m.read32(0x131c4a8);
+    let string_len = m.read32(0x131c4ac);
+    let string = m.bytes[string_ptr as usize..string_ptr as usize + string_len as usize + 1]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_102_READY stop=010682c0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} string={string} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_one_hundred_ten_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1068420)?;
+    let state = m.bytes[0x131c4d4..0x131c560]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let globals = m.bytes[0x1293e24..0x1293e34]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let object_ptr = m.read32(0x131c524);
+    let object = m.bytes[object_ptr as usize..object_ptr as usize + 24]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_110_READY stop=01068420 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} globals={globals} object={object} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_one_hundred_eleven_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x10684d0)?;
+    let state = m.bytes[0x131c55c..0x131c574]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let string_ptr = m.read32(0x131c564);
+    let string_len = m.read32(0x131c568);
+    let string = m.bytes[string_ptr as usize..string_ptr as usize + string_len as usize + 1]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_111_READY stop=010684d0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} string={string} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_one_hundred_sixteen_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1068620)?;
+    let state = m.bytes[0x131c7c8..0x131ca94]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_116_READY stop=01068620 stack={:08x} frame={:08x} eax={:08x} state={state} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_one_hundred_seventeen_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1068640)?;
+    let object = m.bytes[0x131ca94..0x131cad0]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let tail_start = m.heap_next.saturating_sub(128).max(0x80000);
+    let heap_tail = m.bytes[tail_start as usize..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_117_READY stop=01068640 stack={:08x} frame={:08x} eax={:08x} next={:08x} tail_start={tail_start:08x} object={object} heap_tail={heap_tail} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_one_hundred_twenty_eight_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1068900)?;
+    let state = m.bytes[0x131cad0..0x131cfd8]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_128_READY stop=01068900 stack={:08x} frame={:08x} eax={:08x} state={state} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_one_hundred_twenty_nine_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x10689a0)?;
+    let object = m.bytes[0x131cfd8..0x131cff0]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let string_ptr = m.read32(0x131cfe0);
+    let string_len = m.read32(0x131cfe4);
+    let string = m.bytes[string_ptr as usize..string_ptr as usize + string_len as usize + 1]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_129_READY stop=010689a0 stack={:08x} frame={:08x} eax={:08x} next={:08x} object={object} string={string} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_one_hundred_thirty_checkpoints() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.heap_result = 0x60000;
+    translated::run(&mut m, 0x1068a40)?;
+    let object = m.bytes[0x131cffc..0x131d014]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let string_ptr = m.read32(0x131d004);
+    let string_len = m.read32(0x131d008);
+    let string = m.bytes[string_ptr as usize..string_ptr as usize + string_len as usize + 1]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
+    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_130_READY stop=01068a40 stack={:08x} frame={:08x} eax={:08x} next={:08x} object={object} string={string} callbacks={callbacks} calls={}",
         m.stack, m.frame, m.eax, m.heap_next,
         m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
     Ok(())

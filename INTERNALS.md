@@ -771,10 +771,10 @@ first genuinely new constructor shape. The later `__wincmdln`, WinMain, title
 screen, and UI-input checks remain outstanding. SpaceNinjaServer remained
 stopped.
 
-## Constructors 4 through 48 verified (2026-11-20)
+## Constructors 4 through 116 verified (2026-11-20)
 
-The bounded constructor-table lift now reaches entry `01067810`, after the
-first 48 constructors have returned. Constructor 4 executes the original
+The bounded constructor-table lift now reaches entry `01068620`, after the
+first 116 constructors have returned. Constructor 4 executes the original
 object code at `00425060`, `00424B60`, and `00423B70`; Rust supplies narrow
 boundaries for `strrchr` at `00F1ABC0`, string-pool initialization at
 `00423280`, and string interning at `00423730`. Constructors 5 through 8 reuse
@@ -861,6 +861,122 @@ registers callback `01091940`. The complete object and unchanged shared
 manager allocation match original x86, including the heap cursor and callback
 sequence.
 
+
+Constructor 49 calls the same initializer with flags `00000081`, activating
+the translated `00422C70` vector-growth path. It allocates a 24-entry pointer
+vector for the object at `0131AEC0`, creates a second manager node for name key
+`010B07D4`, and registers callback `01091960`. The already-capacious vector
+alternate remains explicit at `0043EE43`. The object, two-node manager state,
+heap cursor, callbacks, registers, and calls match original x86.
+
+
+Constructor 50 repeats the `00000081` shape at `0131AF48`, reusing the second
+manager node and registering callback `01091980`. Constructor 51 then calls
+the already translated `00422CF0` reserve helper for the static vector at
+`0128EB94`, giving it capacity for 32 pointers, and registers callback
+`010918E0`. Both complete states match original x86.
+
+
+Constructor 52 executes `00441B90` and its leaf base initializer `0049DE20`
+as translated code. It initializes the 412-byte object at `0131AFF8`, including
+16 self-linked sublists, then registers callback `010919A0`. The lifter now
+models the sign and overflow flags produced by `INC` and `DEC`, allowing the
+original `DEC`/`JNS` loop to execute without a synthetic boundary. The full
+object, registers, callback state, and call sequence match original x86.
+
+
+Constructor 53 loads `KERNEL32.DLL` through the bounded `00418E10` host
+interface, then translated code resolves `GetFinalPathNameByHandleW` and stores
+the deterministic module and function tokens at `0131B1B8` and `0131B1BC`.
+The real `00418E10` body is an SEH wrapper around activation-context and loader
+APIs; its fixed wide-string input is validated by both fixtures. Constructors
+54 and 55 then register callbacks `01091A10` and `01091A20` through translated
+`_atexit`. Both callback-table states match original x86.
+
+
+Constructor 56 executes the four-instruction leaf `00445C60`, writes vtable
+`0128D968` to object `0131B1C8`, increments `0128D970`, and registers callback
+`01091A30`. The object, counter, callback table, registers, and call order match
+original x86.
+
+Constructor 57 executes constructor code at `010679C0` and the original
+singleton initializer at `00451550`. On first use, translated game code
+initializes the 80-byte singleton at `0131B1E0`, inserts pointer `0128FBA0`
+into its vector, installs vtable `010B2CAC`, and registers callback `01091A70`.
+Rust supplies `0044AAE0` as a bounded `u32` vector-insert interface: it validates
+the vector, position, count, and source pointer, then reproduces the allocation
+and begin/end/capacity state. Two original-x86 fixtures cover both the empty
+vector allocation and the already-initialized vector fast path. Registers, heap
+cursor, singleton bytes, inserted value, callback table, and ordered calls match.
+
+Constructors 58 and 59 reuse the translated `00423B10`, `0048BC20`, and
+`0048BBE0` paths to intern `010B2E08` and initialize the object at `0131B23C`.
+Constructor 60 appends `0128FBB0` to the singleton vector and installs vtable
+`010B2CB4`. The `0044AAE0` boundary now preserves and relocates the first
+pointer when growing from one to two entries. Separate fixtures exercise that
+growth and an already-capacious two-entry vector; both match original x86.
+
+Constructors 61, 62, and 64 call the translated `00421AE0` initializer for the
+16-byte objects at `0131B24C`, `0131B25C`, and `0131B26C`; constructors 63 and
+64 also extend the callback table. Constructor 65 and constructors 66 through
+73 reuse `00425060` to build the object family spanning
+`0131B2C0..0131B807`. One comparison at `01067E00` covers all eight repeated
+constructors and verifies the complete 1,200-byte state plus callback ordering.
+
+Constructor 74 executes the newly admitted leaf `0045B450`. It initializes the
+112-byte object at `0131B808`, creates three groups of five `0128D968` child
+objects, builds two self-linked list heads, increments counters `0128D96C` and
+`0128D970`, and registers callback `01091D70`. The complete object, counters,
+registers, callbacks, and calls match original x86 at `01067E20`. The translated
+execution bound is now 32,768 steps, matching the original-x86 replay bound
+needed by this longer constructor prefix.
+
+Constructors 75 through 87 reuse the translated object, string-interning,
+small-string, scalar, and callback paths. Constructor 76 is the first long
+small string: `/Configs/Editor.cfg/MRU` has length 23. The `00415B30` host
+interface now follows REA-observed `004158D0` behavior by allocating exactly
+`length + 1` bytes, storing the external pointer, and setting capacity to the
+requested length. The full `0131B878..0131BE37` state, allocated string, heap
+cursor, counter, callbacks, registers, and calls match original x86 at
+`01068060`. Constructors 88 through 91 add four more `00425060` objects and
+match as a group at `010681A0`.
+
+Constructor 92 executes newly translated `00479120`, including its call to the
+translated `00445C60` leaf. It initializes the 332-byte object at `0131C198`,
+then inserts byte values `01` and `00` into its two empty vectors. Rust supplies
+`00478D10` as a narrow empty-vector insertion interface for those two exact
+vector addresses; its general relocation branches remain explicit boundaries
+at `00479174` and `0047919F` because `00479120` clears both vectors immediately
+before testing their capacity. The object, allocated bytes, heap cursor,
+counter, callbacks, registers, and calls match original x86 at `010681C0`.
+
+Constructors 93 through 102 reuse translated `0048BC20`, `0048BBE0`,
+`00423B10`, and `00415B30`, register four callbacks, copy three scalar values,
+and initialize the long string object at `0131C4A8`. Their combined state and
+allocated string match original x86 at `010682C0`.
+
+Constructors 103 through 110 reuse the translated object helpers, compute four
+fixed address globals at `01293E24..01293E33`, allocate and initialize the
+24-byte self-linked object stored at `0131C524`, and add three callbacks. The
+allocation-failure assertion path at `010683E3` remains explicit. State,
+allocation, globals, callbacks, registers, heap cursor, and calls match at
+`01068420`.
+
+Constructor 111 builds two temporary strings, interns `DynamicOutPort` through
+newly admitted `00423AC0`, copies the 49-byte `OutPort for all dynamic ports
+fired from any object` string into `0131C564`, frees its temporary allocation,
+and verifies the security cookie. Rust supplies narrow `00415AE0` string-copy,
+`004137D0` game-free, and `00F17BA1` cookie-check interfaces. The fixed short
+string makes the alternate first cleanup path at `0106847C` unreachable; the
+already initialized pool makes `00423AD7` cold. Both remain explicit. The
+persistent state, allocated string, callbacks, registers, heap cursor, and call
+order match at `010684D0`.
+
+Constructors 112 through 116 add one callback and four more translated
+`00425060` objects spanning `0131C7C8..0131CA93`. Their full state and callback
+order match at `01068620`. Both execution fixtures now allow 65,536 bounded
+steps for the longer constructor prefix.
+
 Focused Ghidra evidence retained for this work includes `00424B60` (Evidence
 `ev_56106a5df8af48ef0d52b4b197e478076cd5cd0ec984a7b5c921f89cd9934c9d`),
 `00423B70` (Evidence
@@ -888,6 +1004,30 @@ and one unresolved terminal call at `0041D24A`; these remain boundaries on the
 untaken positive-duration branch.
 
 
+
+
+
+
+
+Focused REA identifies `00445C60` as a four-instruction leaf with one basic
+block and no callees or unresolved calls (Evidence
+`ev_b43df07dbe227a9f7daed9be76a92ee26b104cf62820c15b6eeaa614c617c136`).
+
+Focused REA reports 53 instructions, four basic blocks, and three resolved
+callees in loader wrapper `00418E10` (Evidence
+`ev_ccba41953cf4654458a6ea9a55f39eb6af25fd71a931742fa0a8344a350ee946`).
+The bounded host interface avoids admitting its activation-context setup and
+error-preservation cleanup until those loader behaviors are needed by WinMain.
+
+Focused REA reports 26 instructions, three basic blocks, and one resolved
+callee for `00441B90` (Evidence
+`ev_c2b8206c7ab43576b93fec6647469f5a7deef7eaa32d6a01287b1fb3e4dc4343`).
+Its three-instruction leaf base initializer `0049DE20` is Evidence
+`ev_2dc551e389f7988757be6083f12d38926dea7d9521f5cc300cda8990cb119dea`.
+
+Focused REA reports 50 instructions and seven basic blocks in the vector-growth
+helper `00422C70`, with three resolved callees and no unresolved calls (Evidence
+`ev_4dc422efa4e0f3ca6ff78ec582be6912f2d458633e070a397b1662f2e5ea60ae`).
 
 Focused REA reports 152 instructions, 32 basic blocks, seven resolved callees,
 and one unresolved assertion call in `0043ED70` (Evidence
@@ -919,17 +1059,70 @@ On 2026-11-20, `binary_session` also confirmed that the live REA MCP target is
 the original PE32 executable, using headless Ghidra 12.1.4 with function
 analysis and summary views available.
 
-`verify-startup.cmd "D:\Warframe 2012"` passes 89 original-x86 comparisons,
-including twenty-three constructor comparisons, and exercises all 2,205 reachable
+Focused Ghidra reports 30 instructions, three basic blocks, and one resolved
+callee for singleton initializer `00451550` (summary Evidence
+`ev_c9236febc86734563f67d00291c1a058db8db25ae7bff860519154832d16a0b1`;
+instruction Evidence
+`ev_73a5a70c434ab7bd97b8fb0ebfddf1a1cd5655f7064d669fffe81726718825e3`).
+The vector insertion helper `0044AAE0` has 184 instructions, 19 basic blocks,
+and five resolved callees (summary Evidence
+`ev_2ae6fd708ef1548e13af22f02d2de28e2204c7a17c79092b43b39b6efa8c5351`;
+instruction Evidence
+`ev_4da25b2eeafa79c6a18c5b9ac403735584d1454ca992a3c9350683f95a5b94e8`).
+Its general relocation paths remain outside this fixed one-element startup use.
+
+Focused Ghidra reports 37 instructions, three basic blocks, no callees, and no
+unresolved calls for constructor 74's leaf initializer `0045B450` (summary
+Evidence `ev_733316d086bd8378d4b10dc14b03a99f6da693e17d7a1b871f7f8704923f06a7`;
+instruction Evidence
+`ev_b76196c9115f026d503f0bcd0bcda66730845ceb99103fc31ddb91c62495023d`).
+
+Focused REA reports 60 instructions, seven basic blocks, and four resolved
+callees for long-string capacity helper `004158D0` (summary Evidence
+`ev_da68d42a407968d5a13127d97692d32332a200765ac8dfceaf7546ff796dc6d9`;
+instruction Evidence
+`ev_a1f3f0dc9b34bd8d1237b7b104dcb2173ba9423e79a1540b05bfc686330458f3`).
+Constructor 92 initializer `00479120` has 61 instructions, ten basic blocks,
+two resolved callees, and no unresolved calls (summary Evidence
+`ev_9bba601ef00385dd7fbd15a55c86c0ff1b740c3558b6bae016325c57cb43fc50`;
+instruction Evidence
+`ev_c944582bfbe7c44229f3cddb8884e749c4e2ecbdd57a91bc805701eec6178cae`).
+Its general byte-vector helper `00478D10` has 171 instructions, 18 basic blocks,
+and five resolved callees (summary Evidence
+`ev_0edf92c36d0a0ba859f01976aeed197d3d8e54436e58548034b0c2c370591c04`;
+instruction Evidence
+`ev_01a8abd3765bbc93c9d27195fa6d51cb1fc4b95b8eb7edf768df970af027dc4d`).
+
+Focused REA reports 26 instructions, three basic blocks, and three resolved
+callees for `00423AC0` (summary Evidence
+`ev_448e6b6564bddeffdc1fae09853c2540651cf6800fa2a8e27bcd940d941f1c5f`;
+instruction Evidence
+`ev_679293bbfb89ac947beceed96af551c7b8e76128ca989dc8fa3d025425326249`).
+String-copy helper `00415AE0` has 28 instructions in one block and two resolved
+callees (summary Evidence
+`ev_58114b74ef79ec34286d7f8b0acfb32a7ddad9e9edc8437e8acef12e2656b375`;
+instruction Evidence
+`ev_7d0cb6a1190a20a65404e1cbb1b5c99a35fe135e8c3618d8f87ddcb274f1e36c`).
+The security-cookie leaf is Evidence
+`ev_acf8088f755cc69d725cd6c2ea2fac632fff8e9b280b76333dfcd6ea0b980b93`.
+General allocator-free routine `004137D0` has 650 instructions, 192 blocks,
+and 18 unresolved assertion calls (Evidence
+`ev_601ab53df31405839024073b92ae6a5b4301dea46834b25854d32b04224549d4`),
+so it remains behind the validated fixed-descriptor host boundary.
+
+`verify-startup.cmd "D:\Warframe 2012"` passes 115 original-x86 comparisons,
+including 48 constructor comparisons, and exercises all 3,177 reachable
 instructions in the bounded group. All 20 Rust tests and five Python tests
 pass. Cache verification remains 44 framed entries, 12 unframed entries, one
 stored frame, and 192 compressed blocks across 25 archives. The headless asset
 check still loads the 43,708-byte SigninReward texture with a 256 x 32 top mip
 and three compressed frames.
 
-Last verified checkpoint: entry of constructor `01067810`, after the first 48
-constructors have returned. Next: inspect constructor 49 at `01067810` and
-continue the related manager/object family. The alternate positive-duration
+Last verified checkpoint: entry of constructor `01068620`, after the first 116
+constructors have returned. Next: constructor 117 calls `004BF4E0`. Focused REA
+reports 77 instructions, 13 basic blocks, four resolved callees, and no
+unresolved calls (Evidence
+`ev_645fe9a65e06e646e122b75ffda40f9c1548df23133d4a05b32d37135f49b7d8`). The alternate positive-duration
 path in `0041D1F0` remains recorded at `0041D209`. Continue through
 the constructor table, `__wincmdln` at `00F22689`, and WinMain at `00401140`.
 The title/login screen and UI input remain unverified. SpaceNinjaServer was not

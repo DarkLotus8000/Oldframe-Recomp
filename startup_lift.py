@@ -29,10 +29,16 @@ STOPS = {0xF23011, 0xF23016, 0xF17C56, 0xF22EB4, 0xF17C67,
          0xF18265, 0xF182AA,
          0x42507E,
          0x423B34,
+         0x423AD7,
          0x10676F3,
-         0x43EDFE, 0x43EE1F, 0x43EE08, 0x43EE26, 0x43EE6C, 0x43EECE, 0x43EEE9,
-         0x422D2F,
+         0x10683E3,
+         0x106847C,
+         0x1068949,
+         0x10689F0,
+         0x43EDFE, 0x43EE1F, 0x43EE08, 0x43EE43, 0x43EE6C, 0x43EECE, 0x43EEE9,
+         0x422CB1, 0x422D2F,
          0x41D209,
+         0x479174, 0x47919F,
          0x1067529,
          0xF2D4F3, 0xF1A754, 0xF303A5, 0xF303E3, 0xF21D4B, 0xF22AC4,
          0xF21E59, 0xF21F70}
@@ -63,11 +69,18 @@ RANGES = ((ENTRY, ENTRY + 10), (0xF23039, 0xF230D4),
           (0x1067260, 0x106726A), (0x402B40, 0x402B79),
           (0x1067270, 0x10672B7), (0x10672C0, 0x10672CC),
           (0x10672D0, 0x10672DC),
-          (0x10672E0, 0x1067810), (0x4172E0, 0x41739C),
+          (0x10672E0, 0x1068A40), (0x4172E0, 0x41739C),
+          (0x445C60, 0x445C6F), (0x451550, 0x4515EC),
+          (0x45B450, 0x45B4D1),
+          (0x479120, 0x4791CC),
+          (0x4BF4E0, 0x4BF5CA),
+          (0x4A1A30, 0x4A1A59),
+          (0x441B90, 0x441BE1), (0x49DE20, 0x49DE29),
           (0x43ED70, 0x43EF2C), (0x43D3D0, 0x43D413),
-          (0x422CF0, 0x422D61),
+          (0x422C70, 0x422CEC), (0x422CF0, 0x422D61),
           (0x48BC20, 0x48BC5C), (0x48BBE0, 0x48BC14),
           (0x423B10, 0x423B6A),
+          (0x423AC0, 0x423B0D),
           (0x419DF0, 0x419F96),
           (0x41D1F0, 0x41D209), (0x41D2EF, 0x41D305),
           (0x446700, 0x446739),
@@ -121,13 +134,21 @@ IMPORTS.update({0x10A7308: ('IsProcessorFeaturePresent', 1),
                 0xF2209F: ('reallocate', 2),
                 0x4132A0: ('game_allocate', 3),
                 0x43EB90: ('manager_register', 2),
+                0x44AAE0: ('vector_insert_u32', 3),
+                0x478D10: ('vector_insert_u8', 3),
+                0x415AE0: ('copy_small_string', 1),
+                0x4137D0: ('game_free', 2),
+                0xF17BA1: ('security_cookie_check', 0),
+                0x415E80: ('concat_small_string', 3),
+                0x418E10: ('load_library_w', 1),
                 0xF1ABC0: ('strrchr', 2),
                 0x415B30: ('inline_small_string', 1),
                 0x423280: ('string_pool_init', 0),
                 0x423730: ('intern_string', 3)})
 CDECL_IMPORTS = {0xF25852, 0xF30820, 0xF26890, 0xF28C15, 0xF1F0DC, 0xF18390, 0xF2209F,
                 0xF26500, 0xF18111, 0xF23CFF, 0xF1ABC0, 0x423280}
-CDECL_IMPORTS.add(0x4132A0)
+CDECL_IMPORTS.update((0x4132A0, 0x4137D0))
+CDECL_IMPORTS.add(0x415E80)
 INDIRECT_IMPORTS = {pc: 0x10A70A8 for pc in (0xF22ECA, 0xF22ED7, 0xF22EE4, 0xF22EF1)}
 INDIRECT_IMPORTS.update({0xF22F5C: 0x10A72F0})
 INDIRECT_IMPORTS.update({pc: 0x10A7284 for pc in (0xF22F77, 0xF22F84, 0xF22F91, 0xF22F9E)})
@@ -155,7 +176,40 @@ INDIRECT_TARGETS[0xF207EB] += (0x10674D0,)
 INDIRECT_TARGETS[0xF207EB] += (0x10674F0, 0x1067500, 0x1067510, 0x1067520)
 INDIRECT_TARGETS[0xF207EB] += (0x1067560, 0x1067570, 0x1067580, 0x10675E0)
 INDIRECT_TARGETS[0xF207EB] += (0x1067630, 0x1067640)
-INDIRECT_TARGETS[0xF207EB] += (0x1067650, 0x1067670, 0x10676A0, 0x1067710, 0x1067780)
+INDIRECT_TARGETS[0xF207EB] += (0x1067650, 0x1067670, 0x10676A0, 0x1067710, 0x1067780, 0x1067810, 0x1067880)
+INDIRECT_TARGETS[0xF207EB] += (0x1067910,)
+INDIRECT_TARGETS[0xF207EB] += (0x1067930,)
+INDIRECT_TARGETS[0xF207EB] += (0x1067950,)
+INDIRECT_TARGETS[0xF207EB] += (0x1067980, 0x1067990)
+INDIRECT_TARGETS[0xF207EB] += (0x10679A0,)
+INDIRECT_TARGETS[0xF207EB] += (0x10679C0,)
+INDIRECT_TARGETS[0xF207EB] += (0x1067A10, 0x1067A20)
+INDIRECT_TARGETS[0xF207EB] += (0x1067A50,)
+INDIRECT_TARGETS[0xF207EB] += (0x1067AA0, 0x1067AD0)
+INDIRECT_TARGETS[0xF207EB] += (0x1067B00, 0x1067B10, 0x1067B40, 0x1067B50)
+INDIRECT_TARGETS[0xF207EB] += (0x1067BA0, 0x1067BF0, 0x1067C40, 0x1067C90,
+                              0x1067CE0, 0x1067D30, 0x1067D80, 0x1067DD0)
+INDIRECT_TARGETS[0xF207EB] += (0x1067E00,)
+INDIRECT_TARGETS[0xF207EB] += (0x1067E20, 0x1067E50, 0x1067E70, 0x1067E80,
+                              0x1067ED0, 0x1067F20, 0x1067F30, 0x1067F40,
+                              0x1067F90, 0x1067FC0, 0x1067FF0, 0x1068020,
+                              0x1068040)
+INDIRECT_TARGETS[0xF207EB] += (0x1068060, 0x10680B0, 0x1068100, 0x1068150)
+INDIRECT_TARGETS[0xF207EB] += (0x10681A0,)
+INDIRECT_TARGETS[0xF207EB] += (0x10681C0, 0x10681F0, 0x1068220, 0x1068230,
+                              0x1068240, 0x1068250, 0x1068270, 0x1068280,
+                              0x10682A0, 0x10682B0)
+INDIRECT_TARGETS[0xF207EB] += (0x10682C0, 0x10682F0, 0x1068320, 0x1068340,
+                              0x1068360, 0x1068390, 0x1068400, 0x1068410)
+INDIRECT_TARGETS[0xF207EB] += (0x1068420,)
+INDIRECT_TARGETS[0xF207EB] += (0x10684D0, 0x10684E0, 0x1068530, 0x1068580,
+                              0x10685D0)
+INDIRECT_TARGETS[0xF207EB] += (0x1068620,)
+INDIRECT_TARGETS[0xF207EB] += (0x1068640, 0x1068650, 0x10686A0, 0x10686F0,
+                              0x1068740, 0x1068760, 0x10687B0, 0x1068800,
+                              0x1068810, 0x1068860, 0x10688B0)
+INDIRECT_TARGETS[0xF207EB] += (0x1068900,)
+INDIRECT_TARGETS[0xF207EB] += (0x10689A0,)
 DIGEST = '614c08f25b531d590c5aa6d9cf35b1e406e83d35fbd50e61188f19247fb176ae'
 
 
@@ -262,7 +316,7 @@ def generate_startup(image):
              'pub(super) fn run_from(m: &mut Memory, start: u32, stop: u32) -> Result<(), String> {',
              'let mut r = Registers { esp: 0x20000, ..Default::default() };',
              'let mut pc = start;',
-             'for _ in 0..16384 {',
+             'for _ in 0..65536 {',
              'if pc == stop { m.stack = r.esp; m.frame = r.ebp; m.eax = r.eax; return Ok(()); }',
              'match pc {']
     for pc, insn in sorted(code.items()):

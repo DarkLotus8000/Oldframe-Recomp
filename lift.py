@@ -219,7 +219,13 @@ def translate(insn):
     if op in ("inc", "dec"):
         lhs = value(insn, operands[0])
         method = "wrapping_add" if op == "inc" else "wrapping_sub"
-        return [f"let result = {lhs}.{method}(1);", "r.zero = result == 0;",
+        bits = operands[0].size * 8
+        mask = (1 << bits) - 1
+        sign_bit = 1 << (bits - 1)
+        overflow_at = sign_bit - 1 if op == "inc" else sign_bit
+        return [f"let result = {lhs}.{method}(1) & {mask:#x};", "r.zero = result == 0;",
+                f"r.sign = (result & {sign_bit:#x}) != 0;",
+                f"r.overflow = ({lhs} & {mask:#x}) == {overflow_at:#x};",
                 store(insn, operands[0], "result")]
     if op in ("add", "sub", "cmp"):
         lhs, rhs = (value(insn, operand) for operand in operands)
@@ -304,7 +310,7 @@ def validate_signed_branches(instructions):
     for insn in instructions:
         if insn.mnemonic in ('jge', 'jl', 'jns'):
             previous = by_end.get(insn.address)
-            producers = ('cmp',) if insn.mnemonic in ('jge', 'jl') else ('test',)
+            producers = ('cmp',) if insn.mnemonic in ('jge', 'jl') else ('test', 'inc', 'dec')
             if previous is None or previous.mnemonic not in producers or insn.address in direct_targets:
                 raise ValueError(f'unsupported signed flag producer at {insn.address:#x}')
 
