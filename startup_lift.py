@@ -34,7 +34,14 @@ STOPS = {0xF23011, 0xF23016, 0xF17C56, 0xF22EB4, 0xF17C67,
          0x10683E3,
          0x106847C,
          0x1068949,
-         0x10689F0,
+         0x10689E9,
+         0x1068ABC,
+         0x1068B8C, 0x1068C5C, 0x1068D2C, 0x1068DFC,
+         0x1068F39, 0x1069089, 0x106915C,
+         0x106922C,
+         0x106937C, 0x106939D, 0x106944C, 0x106946D,
+         0x1069629, 0x10696C9,
+         0x1069A89,
          0x43EDFE, 0x43EE1F, 0x43EE08, 0x43EE43, 0x43EE6C, 0x43EECE, 0x43EEE9,
          0x422CB1, 0x422D2F,
          0x41D209,
@@ -69,11 +76,12 @@ RANGES = ((ENTRY, ENTRY + 10), (0xF23039, 0xF230D4),
           (0x1067260, 0x106726A), (0x402B40, 0x402B79),
           (0x1067270, 0x10672B7), (0x10672C0, 0x10672CC),
           (0x10672D0, 0x10672DC),
-          (0x10672E0, 0x1068A40), (0x4172E0, 0x41739C),
+          (0x10672E0, 0x106A210), (0x4172E0, 0x41739C),
           (0x445C60, 0x445C6F), (0x451550, 0x4515EC),
           (0x45B450, 0x45B4D1),
           (0x479120, 0x4791CC),
           (0x4BF4E0, 0x4BF5CA),
+          (0xC60FE0, 0xC610CA),
           (0x4A1A30, 0x4A1A59),
           (0x441B90, 0x441BE1), (0x49DE20, 0x49DE29),
           (0x43ED70, 0x43EF2C), (0x43D3D0, 0x43D413),
@@ -127,7 +135,8 @@ IMPORTS = {0x10A7268: ('GetSystemTimeAsFileTime', 1),
            0xF1F0DC: ('free', 1),
            0xF18390: ('memset', 3),
            0xF26500: ('is_nonwritable_image_pointer', 1),
-           0xF18111: ('raw_dll_main', 1)}
+           0xF18111: ('raw_dll_main', 1),
+           0x41D560: ('duration_init', 1)}
 IMPORTS.update({0x10A7308: ('IsProcessorFeaturePresent', 1),
                 0x10A7160: ('SetUnhandledExceptionFilter', 1),
                 0xF23CFF: ('allocation_size', 1),
@@ -210,6 +219,30 @@ INDIRECT_TARGETS[0xF207EB] += (0x1068640, 0x1068650, 0x10686A0, 0x10686F0,
                               0x1068810, 0x1068860, 0x10688B0)
 INDIRECT_TARGETS[0xF207EB] += (0x1068900,)
 INDIRECT_TARGETS[0xF207EB] += (0x10689A0,)
+INDIRECT_TARGETS[0xF207EB] += (0x1068A40,)
+INDIRECT_TARGETS[0xF207EB] += (0x1068B10, 0x1068BE0, 0x1068CB0, 0x1068D80,
+                              0x1068E50, 0x1068EA0)
+INDIRECT_TARGETS[0xF207EB] += (0x1068EF0, 0x1068F90, 0x1068FE0, 0x1069030,
+                              0x1069040, 0x10690E0)
+INDIRECT_TARGETS[0xF207EB] += (0x10691B0,)
+INDIRECT_TARGETS[0xF207EB] += (0x1069280,)
+INDIRECT_TARGETS[0xF207EB] += (0x10692A0,)
+INDIRECT_TARGETS[0xF207EB] += (0x10692C0,)
+INDIRECT_TARGETS[0xF207EB] += (0x10692E0,)
+INDIRECT_TARGETS[0xF207EB] += (0x1069300, 0x10693D0)
+INDIRECT_TARGETS[0xF207EB] += (0x10694A0, 0x10694F0, 0x1069540, 0x1069590)
+INDIRECT_TARGETS[0xF207EB] += (0x10695E0, 0x1069680)
+INDIRECT_TARGETS[0xF207EB] += (0x1069720, 0x1069770, 0x10697C0, 0x1069810,
+                              0x1069860, 0x10698B0, 0x1069900, 0x1069950)
+INDIRECT_TARGETS[0xF207EB] += (0x10699A0, 0x10699F0, 0x1069A40, 0x1069AE0)
+INDIRECT_TARGETS[0xF207EB] += (0x1069B30, 0x1069B80, 0x1069BD0, 0x1069C20,
+                              0x1069C70, 0x1069CC0, 0x1069D10,
+                              0x1069D60, 0x1069D70, 0x1069D80)
+INDIRECT_TARGETS[0xF207EB] += (0x1069DC0, 0x1069DF0, 0x1069E10, 0x1069E30,
+                              0x1069E40, 0x1069E50, 0x1069E60)
+INDIRECT_TARGETS[0xF207EB] += (0x1069E80, 0x1069ED0)
+INDIRECT_TARGETS[0xF207EB] += tuple(range(0x1069F20, 0x106A1C0, 0x10))
+INDIRECT_TARGETS[0xF207EB] += (0x106A1C0, 0x106A1D0, 0x106A1E0, 0x106A1F0)
 DIGEST = '614c08f25b531d590c5aa6d9cf35b1e406e83d35fbd50e61188f19247fb176ae'
 
 
@@ -240,7 +273,7 @@ def translate(insn):
     return lift.translate(insn)
 
 
-def discover(image, entry, ranges, stops, imports, limit=4096):
+def discover(image, entry, ranges, stops, imports, limit=8192):
     base, sections = lift.pe_sections(image)
     decoder = lift.Cs(lift.CS_ARCH_X86, lift.CS_MODE_32)
     decoder.detail = True

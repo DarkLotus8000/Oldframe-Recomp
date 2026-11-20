@@ -771,10 +771,10 @@ first genuinely new constructor shape. The later `__wincmdln`, WinMain, title
 screen, and UI-input checks remain outstanding. SpaceNinjaServer remained
 stopped.
 
-## Constructors 4 through 116 verified (2026-11-20)
+## Constructors 4 through 233 verified (2026-11-20)
 
-The bounded constructor-table lift now reaches entry `01068620`, after the
-first 116 constructors have returned. Constructor 4 executes the original
+The bounded constructor-table lift now reaches entry `0106A210`, after the
+first 233 constructors have returned. Constructor 4 executes the original
 object code at `00425060`, `00424B60`, and `00423B70`; Rust supplies narrow
 boundaries for `strrchr` at `00F1ABC0`, string-pool initialization at
 `00423280`, and string interning at `00423730`. Constructors 5 through 8 reuse
@@ -977,6 +977,111 @@ Constructors 112 through 116 add one callback and four more translated
 order match at `01068620`. Both execution fixtures now allow 65,536 bounded
 steps for the longer constructor prefix.
 
+Constructor 117 translates `004BF4E0` and uses the bounded `00415E80` interface
+twice to concatenate fixed prefixes and suffixes into two game strings. The
+host reproduces inline or allocated storage, capacity, termination, and the
+returned object pointer; translated code performs temporary cleanup and cookie
+verification. Object bytes, heap tail, heap cursor, registers, and ordered calls
+match original x86 at `01068640`.
+
+Constructors 118 through 128 cover one 128-bit constant copy, one floating-point
+product, an interned name, and eight more `00425060` objects through
+`0131CFD7`. Their full 1,288-byte state and callback order match original x86
+at `01068900`.
+
+Constructors 129 and 130 translate the 14-instruction `004A1A30` wrapper. Each
+interns a short event name and copies its longer description into an allocated
+persistent string, then frees the long temporary and registers a callback. The
+fixed short temporaries make cleanup paths `01068949` and `010689E9`
+unreachable and explicit. Both objects, persistent strings, heap cursors,
+callbacks, registers, and calls match at `010689A0` and `01068A40`.
+
+Constructor 131 repeats that event-object shape and allocates an eight-byte
+callback record through descriptor `0129A4C8`. The allocator boundary now
+accepts this observed descriptor/size pair. Separate fixtures verify successful
+allocation and the null result branch; object state, callback record, heap
+cursor, callback table, registers, and calls match at `01068B10`. The fixed
+short temporary leaves cleanup path `01068ABC` explicit.
+
+Constructors 132 through 137 repeat the same translated event/callback family.
+Two fixtures cover successful `0129A4C8` callback-record allocation and an
+all-allocation-failure run. Their persistent event strings, callback records,
+heap cursor, callback table, registers, and ordered calls match original x86 at
+`01068EF0`. Fixed short-string cleanup paths `01068B8C`, `01068C5C`,
+`01068D2C`, and `01068DFC` remain explicit unreachable boundaries.
+
+Constructors 138 through 143 extend that family through `0131D5C7` and match
+the original in the same success and all-failure conditions at `010691B0`.
+The fixed short strings leave cleanup paths `01068F39`, `01069089`, and
+`0106915C` explicit. No new host interface was needed; translated game code
+continues to use the previously verified string, event-wrapper, allocator,
+free, atexit, and security-cookie boundaries.
+
+Constructor 144 repeats the event/callback shape once more and extends the
+persistent state through `0131D5EF`. Success and allocation-failure fixtures
+match original x86 at `01069280`; fixed short-string cleanup path `0106922C`
+is explicit. Its callback record stores function pointer `004D3EC0`, and the
+constructor registers callback `010928C0`.
+
+Constructor 145 initializes the nine-byte duration object at `0131D5F0` from
+the fixed float `1.0`. Rust supplies a narrow `0041D560` boundary for this
+constructor shape. The original-x86 fixture executes the real helper and its
+x87 conversion routine `00F18186`; both sides seed timer value 42 through the
+already-initialized fast path of `0041D060`, and both produce the same 64-bit
+value and flag byte at `010692A0`. Constructor 146 then reuses translated
+`004BF4E0` and the established concatenation boundary, matching its persistent
+string state, heap bytes, registers, and calls at `010692C0`.
+
+Constructor 147 executes all 77 instructions of `00C60FE0` as translated game
+code. Its fixed 25-byte source builds and frees two temporary concatenations
+through the existing string and free interfaces; persistent state, temporary
+heap bytes, registers, and ordered calls match at `010692E0`. Constructor 148
+then multiplies the original floating-point constants and writes the matching
+scalar to `0131D6E0` at `01069300`.
+
+Constructors 149 and 150 repeat the event/callback-record family. Success and
+all-allocation-failure fixtures match through `0131D733` at `010694A0`.
+Cleanup entries `0106937C`, `0106939D`, `0106944C`, and `0106946D` are
+explicit for the transferred fixed strings. Constructors 151 through 154 then
+reuse translated `00425060` to initialize four object families spanning
+`0131D738..0131D997`; their full state and callback ordering match at
+`010695E0`. The discovery budget is now 8,192 instructions so the growing
+bounded graph remains explicit without changing its execution limit.
+
+Constructors 155 and 156 repeat the event-object family without callback-record
+allocation. Their persistent strings, temporary heap bytes, callbacks,
+registers, and call order match at `01069720`; only the fixed short-string
+cleanup entries `01069629` and `010696C9` are explicit. Constructors 157
+through 164 then form another eight-entry `00425060` object batch spanning
+`0131D9E8..0131DED7`. Its complete state and callback ordering match original
+x86 at `010699A0`.
+
+Constructors 165 and 166 reuse `00425060`, constructor 167 executes the
+translated event-object path, and constructor 168 returns to `00425060`.
+Their complete `0131DEF8..0131E0D7` state, temporary event-string heap bytes,
+callbacks, registers, and ordered calls match original x86 at `01069B30`.
+The fixed short-string alternate beginning at `01069A89` remains explicit.
+
+Constructors 169 through 175 form a seven-object `00425060` family.
+Constructors 176 and 177 intern two names through translated `00423B10`, and
+constructor 178 executes the original 12-iteration inline-string initialization
+loop. Their complete state and callbacks match at `01069DC0`. Constructors 179
+through 185 add another object, two SIMD splats, three interned names, and one
+inline string; state, heap bytes, callbacks, registers, and calls match at
+`01069E80`. Constructors 186 and 187 finish two more `00425060` objects through
+`0131EE4F`, matching at `01069F20`.
+
+Constructors 188 through 229 form a contiguous 42-entry string-interning
+family. Each leaf passes its original literal and global destination to the
+translated `00423B10` path; the complete global state matches the original at
+`0106A1C0`. Constructors 230 through 232 register three callbacks through the
+translated `_atexit` implementation, and constructor 233 multiplies the
+original scalar constants into `0131F098`. Callback bytes, scalar state,
+registers, stack, and ordered host calls match at `0106A210`. Focused Ghidra
+summary requests found no standalone procedures at these tiny table entries;
+the constructor-table references and decoded instruction bytes define the
+bounded family.
+
 Focused Ghidra evidence retained for this work includes `00424B60` (Evidence
 `ev_56106a5df8af48ef0d52b4b197e478076cd5cd0ec984a7b5c921f89cd9934c9d`),
 `00423B70` (Evidence
@@ -1110,19 +1215,55 @@ and 18 unresolved assertion calls (Evidence
 `ev_601ab53df31405839024073b92ae6a5b4301dea46834b25854d32b04224549d4`),
 so it remains behind the validated fixed-descriptor host boundary.
 
-`verify-startup.cmd "D:\Warframe 2012"` passes 115 original-x86 comparisons,
-including 48 constructor comparisons, and exercises all 3,177 reachable
+Focused REA reports 48 instructions, three basic blocks, and two resolved
+callees for concatenation helper `00415E80` (summary Evidence
+`ev_3688300e6d129219faf43af23ae61ab9b805478d76a6692ff7753c478e9a0f01`;
+instruction Evidence
+`ev_d3c5e3e32467e52a28c73176580af62b95659c5f44c844524107365bb6176a43`).
+Constructor 117 helper `004BF4E0` is retained as summary Evidence
+`ev_645fe9a65e06e646e122b75ffda40f9c1548df23133d4a05b32d37135f49b7d8`
+and instruction Evidence
+`ev_676a6e25c48a23de6c923c7d50f1d8ab297efee15067c3eaec783d43814c7006`.
+The `004A1A30` event wrapper has 14 instructions in one block, two resolved
+callees, and no unresolved calls (summary Evidence
+`ev_54ce0a02dd0b8bdc99a2efd8e12c0c31331976ed9810aced02ee2681b89dd941`;
+instruction Evidence
+`ev_8f72dd28d269679cef6a50e2ece164c1dd0340a786b861e594ec446d3312cdfd`).
+
+A focused headless Ghidra query confirms constructor 144 at `010691B0` is a
+206-byte, ten-basic-block function spanning `010691B0..0106927D` (Evidence
+`ev_f34ef5e795ec0d5623c6332627da762fd00f612cd4d2f69027ae804ac56cb7ba`).
+It repeats the event-object shape, calls `004A1A30`, allocates the same
+eight-byte `0129A4C8` callback record with function pointer `004D3EC0`, and
+registers callback `010928C0`.
+
+Duration helper `0041D560` is retained as focused summary Evidence
+`ev_682c2abbb6cc221ee0162b4230c9d3661a3bb7b08862b2a9fa655421508ff67b`.
+Ghidra reports 36 instructions, three basic blocks, two resolved callees, and
+no unresolved calls. Constructor 145 passes the fixed float `1.0`, taking the
+timer-conversion path containing x87 operations in the original comparison.
+
+Focused summaries for the duration helper's resolved callees are Evidence
+`ev_d7c06fc7698db15b92ff2db01860a284941831bb96f785647cf6b1d93e7110e4`
+for `0041D060` and Evidence
+`ev_f58460279127fc5a0619302f478844083227076986c669769db4c71ce8378af3`
+for `00F18186`. Ghidra reports 40 and 37 instructions respectively. The next
+constructor helper `00C60FE0` has 77 instructions, 13 basic blocks, four
+resolved callees, and no unresolved calls (Evidence
+`ev_75ccdf1e0cae77e36e3f297bef6288fda908cc82d46f2beb2a754c0129eff8b6`).
+
+`verify-startup.cmd "D:\Warframe 2012"` passes 142 original-x86 comparisons,
+including 75 constructor comparisons, and exercises all 4,879 reachable
 instructions in the bounded group. All 20 Rust tests and five Python tests
 pass. Cache verification remains 44 framed entries, 12 unframed entries, one
 stored frame, and 192 compressed blocks across 25 archives. The headless asset
 check still loads the 43,708-byte SigninReward texture with a 256 x 32 top mip
 and three compressed frames.
 
-Last verified checkpoint: entry of constructor `01068620`, after the first 116
-constructors have returned. Next: constructor 117 calls `004BF4E0`. Focused REA
-reports 77 instructions, 13 basic blocks, four resolved callees, and no
-unresolved calls (Evidence
-`ev_645fe9a65e06e646e122b75ffda40f9c1548df23133d4a05b32d37135f49b7d8`). The alternate positive-duration
+Last verified checkpoint: entry of constructor `0106A210`, after the first 233
+constructors have returned. Next: translate constructor 234's `00425060`
+object initializer and continue through the adjacent object family.
+The alternate positive-duration
 path in `0041D1F0` remains recorded at `0041D209`. Continue through
 the constructor table, `__wincmdln` at `00F22689`, and WinMain at `00401140`.
 The title/login screen and UI input remain unverified. SpaceNinjaServer was not
