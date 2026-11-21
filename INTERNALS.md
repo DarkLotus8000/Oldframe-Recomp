@@ -771,10 +771,10 @@ first genuinely new constructor shape. The later `__wincmdln`, WinMain, title
 screen, and UI-input checks remain outstanding. SpaceNinjaServer remained
 stopped.
 
-## Constructors 4 through 233 verified (2026-11-20)
+## Constructors 4 through 340 verified (2026-11-21)
 
-The bounded constructor-table lift now reaches entry `0106A210`, after the
-first 233 constructors have returned. Constructor 4 executes the original
+The bounded constructor-table lift now reaches entry `0106B550`, after the
+first 305 constructors have returned. Constructor 4 executes the original
 object code at `00425060`, `00424B60`, and `00423B70`; Rust supplies narrow
 boundaries for `strrchr` at `00F1ABC0`, string-pool initialization at
 `00423280`, and string interning at `00423730`. Constructors 5 through 8 reuse
@@ -1082,6 +1082,91 @@ summary requests found no standalone procedures at these tiny table entries;
 the constructor-table references and decoded instruction bytes define the
 bounded family.
 
+Constructors 234 through 267 initialize another 31-object `00425060` family
+and register three standalone callbacks. The complete `0131F0A0..013220B7`
+state, callback table, registers, stack, and ordered host calls match the
+original at `0106ABB0`. Both execution fixtures now use a 131,072-step bound;
+the previous 65,536-step limit stopped reproducibly at `0106A7C5` as this
+verified prefix grew. Constructor 268 is the first new shape and calls helper
+`004A5160`.
+
+A focused headless Ghidra summary for `004A5160` did not finish within the
+client observation window after the target was reopened. Direct decoding of
+the original bytes identifies the next concrete boundaries: three calls to
+`0043FD40`, the already supported allocator `004132A0`, translated reserve
+helper `00422CF0`, an indirect call through `0128D438`, and direct helpers
+`004A4EC0` and `00460AC0`, followed by the translated security-cookie check.
+The next slice should resolve those three helpers and the indirect target
+before admitting the repeated constructor family at `0106ABB0`.
+
+Constructor 268 now executes `004A5160` as translated game code. It builds a
+composite name, interns it, creates and reserves the shared registry vector,
+inserts the first object, and verifies the security cookie. Rust supplies
+narrow bounded-copy, lower-bound, in-capacity insertion, and assertion-
+predicate interfaces. Constructors 269 through 284 repeat that shape; the
+interfaces perform lexicographic pair ordering and preserve sorted pointer
+insertion. All 17 objects, heap bytes, registry fields and contents, callback
+table, registers, stack, and ordered calls match at `0106AFF0`.
+
+Focused Ghidra summaries corroborate `0043FD40` as a 31-instruction,
+nine-block, three-parameter leaf with no callees (Evidence
+`ev_969d1647331d08a4504b617222c7008a63453ba1fcb597fbf1616f2290265cb3`),
+retain the `004A4EC0` lower-bound analysis (Evidence
+`ev_da67f8324f6689cc2ef90daf6f213488c2eb6cad72b891d4c88b03e8a6b3aa0e`),
+and identify `00460AC0` as a 184-instruction, 19-block insertion routine with
+five resolved callees and no unresolved calls (Evidence
+`ev_896acaca64ff5aaa269ae636b1f8c226c8c85085607b40e436aa34619d315f86`).
+
+Constructors 285 through 305 then reuse translated `00425060`, `00421AE0`,
+and `00415B30` paths, add two scalar products, and extend persistent state
+through `01322E57`. State, heap, callbacks, registers, stack, and calls match
+at `0106B550`.
+
+Constructor 306 calls translated leaf initializer `00558E30`; constructors
+307 through 321 then continue the established object and callback shapes.
+Their state, heap, callback table, registers, stack, and ordered calls match
+the original x86 at `0106B900`. A focused headless Ghidra summary reports
+that `00558E30` is a 16-instruction, one-basic-block leaf with no callees or
+unresolved calls (summary Evidence
+`ev_13a2b68b834a4ff4b0bf58be667204158f36bba922a031858b96a51f88d6d709`;
+full Evidence
+`ev_3ca4018fdf4351b9817fb82bad2a1547276404bec3d945b2334a97b07425adb1`).
+
+Constructors 322 through 326 load three fixed double constants, call original
+math helper `00F187A1`, convert the results to scalar floats, square them, and
+store five results across `0129FF7C..012A001F`. The translated boundary uses
+Rust `f64::sin`; the comparison harness executes the original helper. All
+stored result bytes, callbacks, registers, stack, and calls match at
+`0106B9F0`. Focused Ghidra reports 100 instructions, nine basic blocks, one
+resolved callee, and no unresolved calls for `00F187A1` (summary Evidence
+`ev_69de0965fe63ba39fa88427ba2ebfa6c4ce7727b56d0536b64a8f16019dc4af6`;
+full Evidence
+`ev_20f3fa7a7aee4861d00ee97a174ba41908ab12b8c0b19377735c1b738b963a0d`;
+pseudocode Evidence
+`ev_83d222255110287680470684a5a03346cc3b05ef63bd7944863446bf08e63c66`).
+
+Constructors 327 through 336 reuse translated `00425060` for ten more global
+objects. Their complete state, heap, callback table, registers, stack, and
+ordered calls match at `0106BCF0`. Constructor 337 allocates a 48-byte object
+with descriptor `012A18A8`, initializes its self-linked fields and two flag
+bytes, and constructor 338 registers its cleanup callback. Constructors 339
+and 340 then initialize two fixed strings through translated `00415B30`.
+The object, strings, heap, callbacks, registers, stack, and calls match at
+`0106BDB0`.
+
+The allocation-failure arm is bounded at `0106BD43`. Focused Ghidra identifies
+its helper `004259A0` as an 18-instruction, three-basic-block terminal failure
+routine leading to `__invoke_watson` (summary Evidence
+`ev_46836fd9503c0fdf504f16680a08b2b1f8901b2f5236adbd4059730b6bc48264`;
+full Evidence
+`ev_90af6d6dd1f9374798b087d0d3da873f79b24d0811a28ff1f6fa73637e2926fd`).
+Constructor 341 at `0106BDB0` calls `00415E10`; its focused summary reports
+42 instructions in one basic block, two resolved callees, and no unresolved
+calls (summary Evidence
+`ev_07405461d41bc4882a2a8dfe800f32b7d196145c109f8ce4b5563b3dff517c7b`;
+full Evidence
+`ev_ea39552f95d77b1669f85761186279f7fe054ce678c6530ea8225d58b30f5568`).
+
 Focused Ghidra evidence retained for this work includes `00424B60` (Evidence
 `ev_56106a5df8af48ef0d52b4b197e478076cd5cd0ec984a7b5c921f89cd9934c9d`),
 `00423B70` (Evidence
@@ -1252,17 +1337,17 @@ constructor helper `00C60FE0` has 77 instructions, 13 basic blocks, four
 resolved callees, and no unresolved calls (Evidence
 `ev_75ccdf1e0cae77e36e3f297bef6288fda908cc82d46f2beb2a754c0129eff8b6`).
 
-`verify-startup.cmd "D:\Warframe 2012"` passes 142 original-x86 comparisons,
-including 75 constructor comparisons, and exercises all 4,879 reachable
+`verify-startup.cmd "D:\Warframe 2012"` passes 150 original-x86 comparisons,
+including 83 constructor comparisons, and exercises all 6,329 reachable
 instructions in the bounded group. All 20 Rust tests and five Python tests
 pass. Cache verification remains 44 framed entries, 12 unframed entries, one
 stored frame, and 192 compressed blocks across 25 archives. The headless asset
 check still loads the 43,708-byte SigninReward texture with a 256 x 32 top mip
 and three compressed frames.
 
-Last verified checkpoint: entry of constructor `0106A210`, after the first 233
-constructors have returned. Next: translate constructor 234's `00425060`
-object initializer and continue through the adjacent object family.
+Last verified checkpoint: entry of constructor `0106BDB0`, after the first 340
+constructors have returned. Next: translate constructor 341's exercised
+`00415E10` string-composition path.
 The alternate positive-duration
 path in `0041D1F0` remains recorded at `0041D209`. Continue through
 the constructor table, `__wincmdln` at `00F22689`, and WinMain at `00401140`.

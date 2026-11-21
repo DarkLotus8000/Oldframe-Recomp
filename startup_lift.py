@@ -46,6 +46,8 @@ STOPS = {0xF23011, 0xF23016, 0xF17C56, 0xF22EB4, 0xF17C67,
          0x422CB1, 0x422D2F,
          0x41D209,
          0x479174, 0x47919F,
+         0x4A5244, 0x4A527E,
+         0x106BD43,
          0x1067529,
          0xF2D4F3, 0xF1A754, 0xF303A5, 0xF303E3, 0xF21D4B, 0xF22AC4,
          0xF21E59, 0xF21F70}
@@ -76,7 +78,7 @@ RANGES = ((ENTRY, ENTRY + 10), (0xF23039, 0xF230D4),
           (0x1067260, 0x106726A), (0x402B40, 0x402B79),
           (0x1067270, 0x10672B7), (0x10672C0, 0x10672CC),
           (0x10672D0, 0x10672DC),
-          (0x10672E0, 0x106A210), (0x4172E0, 0x41739C),
+          (0x10672E0, 0x106BEE0), (0x4172E0, 0x41739C),
           (0x445C60, 0x445C6F), (0x451550, 0x4515EC),
           (0x45B450, 0x45B4D1),
           (0x479120, 0x4791CC),
@@ -93,6 +95,8 @@ RANGES = ((ENTRY, ENTRY + 10), (0xF23039, 0xF230D4),
           (0x41D1F0, 0x41D209), (0x41D2EF, 0x41D305),
           (0x446700, 0x446739),
           (0x424B60, 0x424BE1), (0x423B70, 0x423BCD),
+          (0x4A5160, 0x4A52E6),
+          (0x558E30, 0x558E5E),
           (0xF22B05, 0xF22B0E),
           (0xF2071E, 0xF20787), (0xF22AFC, 0xF22B05),
           (0xF2D4E4, 0xF2D4F3), (0xF1A79D, 0xF1A7AC),
@@ -149,15 +153,23 @@ IMPORTS.update({0x10A7308: ('IsProcessorFeaturePresent', 1),
                 0x4137D0: ('game_free', 2),
                 0xF17BA1: ('security_cookie_check', 0),
                 0x415E80: ('concat_small_string', 3),
+                0x415E10: ('concat_two_strings', 3),
                 0x418E10: ('load_library_w', 1),
                 0xF1ABC0: ('strrchr', 2),
                 0x415B30: ('inline_small_string', 1),
                 0x423280: ('string_pool_init', 0),
-                0x423730: ('intern_string', 3)})
+                0x423730: ('intern_string', 3),
+                0x43FD40: ('copy_bounded', 3),
+                0x4A4EC0: ('lower_bound_empty', 6),
+                0x460AC0: ('vector_insert_ptr', 3)})
+IMPORTS[0x421860] = ('assertion_predicate', 1)
+XMM_BOUNDARIES = {0xF187A1}
 CDECL_IMPORTS = {0xF25852, 0xF30820, 0xF26890, 0xF28C15, 0xF1F0DC, 0xF18390, 0xF2209F,
                 0xF26500, 0xF18111, 0xF23CFF, 0xF1ABC0, 0x423280}
 CDECL_IMPORTS.update((0x4132A0, 0x4137D0))
 CDECL_IMPORTS.add(0x415E80)
+CDECL_IMPORTS.add(0x415E10)
+CDECL_IMPORTS.update((0x43FD40, 0x4A4EC0))
 INDIRECT_IMPORTS = {pc: 0x10A70A8 for pc in (0xF22ECA, 0xF22ED7, 0xF22EE4, 0xF22EF1)}
 INDIRECT_IMPORTS.update({0xF22F5C: 0x10A72F0})
 INDIRECT_IMPORTS.update({pc: 0x10A7284 for pc in (0xF22F77, 0xF22F84, 0xF22F91, 0xF22F9E)})
@@ -243,12 +255,43 @@ INDIRECT_TARGETS[0xF207EB] += (0x1069DC0, 0x1069DF0, 0x1069E10, 0x1069E30,
 INDIRECT_TARGETS[0xF207EB] += (0x1069E80, 0x1069ED0)
 INDIRECT_TARGETS[0xF207EB] += tuple(range(0x1069F20, 0x106A1C0, 0x10))
 INDIRECT_TARGETS[0xF207EB] += (0x106A1C0, 0x106A1D0, 0x106A1E0, 0x106A1F0)
+INDIRECT_TARGETS[0xF207EB] += (0x106A210, 0x106A260, 0x106A2B0, 0x106A2C0)
+INDIRECT_TARGETS[0xF207EB] += tuple(range(0x106A310, 0x106AAE0, 0x50))
+INDIRECT_TARGETS[0xF207EB] += (0x106AAE0, 0x106AB10, 0x106AB20, 0x106AB30, 0x106AB60)
+INDIRECT_TARGETS[0xF207EB] += (0x106ABB0,)
+INDIRECT_TARGETS[0xF207EB] += tuple(range(0x106ABF0, 0x106AFF0, 0x40))
+INDIRECT_TARGETS[0xF207EB] += (0x106AFF0, 0x106B020, 0x106B050, 0x106B080,
+                              0x106B0B0, 0x106B100, 0x106B120, 0x106B170,
+                              0x106B1C0, 0x106B210, 0x106B260, 0x106B2B0,
+                              0x106B300, 0x106B350, 0x106B370, 0x106B3C0,
+                              0x106B3F0, 0x106B440, 0x106B490, 0x106B4B0,
+                              0x106B500)
+INDIRECT_TARGETS[0xF207EB] += (0x106B550, 0x106B570, 0x106B5A0, 0x106B5F0,
+                              0x106B620, 0x106B670, 0x106B6A0, 0x106B6D0,
+                              0x106B720, 0x106B740, 0x106B790, 0x106B7E0,
+                              0x106B810, 0x106B840, 0x106B890, 0x106B8E0)
+INDIRECT_TARGETS[0xF207EB] += (0x106B900, 0x106B930, 0x106B960, 0x106B990,
+                              0x106B9C0)
+INDIRECT_TARGETS[0xF207EB] += (0x106B9F0, 0x106BA40, 0x106BA90, 0x106BAE0,
+                              0x106BB30, 0x106BB80, 0x106BBD0, 0x106BC20,
+                              0x106BC50, 0x106BCA0)
+INDIRECT_TARGETS[0xF207EB] += (0x106BCF0, 0x106BD60, 0x106BD70, 0x106BD90)
+INDIRECT_TARGETS[0xF207EB] += (0x106BDB0, 0x106BDE0, 0x106BE10, 0x106BE40,
+                              0x106BE90)
+INDIRECT_TARGETS[0x4A5274] = (0x421860,)
 DIGEST = '614c08f25b531d590c5aa6d9cf35b1e406e83d35fbd50e61188f19247fb176ae'
 
 
 def translate(insn):
     """Startup arithmetic that can report a guest divide fault to its caller."""
     args = insn.operands
+    if insn.mnemonic == 'cvtsd2ss' and insn.op_str == 'xmm0, xmm0':
+        return ['let value = f64::from_bits(r.xmm0 as u64) as f32;',
+                'r.xmm0 = (r.xmm0 & (!0u128 << 32)) | u128::from(value.to_bits());']
+    if insn.mnemonic == 'mulss' and insn.op_str == 'xmm0, xmm0':
+        return ['let value = f32::from_bits(r.xmm0 as u32);',
+                'let result = (value * value).to_bits();',
+                'r.xmm0 = (r.xmm0 & (!0u128 << 32)) | u128::from(result);']
     if insn.mnemonic == 'comiss' and len(args) == 2:
         lhs = 'r.xmm0'
         rhs = f'm.read32({lift.address(insn, args[1].mem)})'
@@ -308,7 +351,7 @@ def discover(image, entry, ranges, stops, imports, limit=8192):
         if op in ('call', 'jmp') or op in lift.CONDITIONS:
             arg = args[0]
             if arg.type == lift.X86_OP_IMM:
-                if not (op == 'call' and arg.imm in imports):
+                if not (op == 'call' and (arg.imm in imports or arg.imm in XMM_BOUNDARIES)):
                     pending.append(arg.imm)
             elif (op == 'call' and arg.type == lift.X86_OP_MEM
                   and not arg.mem.base and not arg.mem.index
@@ -349,7 +392,7 @@ def generate_startup(image):
              'pub(super) fn run_from(m: &mut Memory, start: u32, stop: u32) -> Result<(), String> {',
              'let mut r = Registers { esp: 0x20000, ..Default::default() };',
              'let mut pc = start;',
-             'for _ in 0..65536 {',
+             'for _ in 0..131072 {',
              'if pc == stop { m.stack = r.esp; m.frame = r.ebp; m.eax = r.eax; return Ok(()); }',
              'match pc {']
     for pc, insn in sorted(code.items()):
@@ -358,7 +401,12 @@ def generate_startup(image):
         if op == 'call':
             if args[0].type == lift.X86_OP_IMM:
                 target = args[0].imm
-                if target in IMPORTS:
+                if target == 0xF187A1:
+                    lines += ['let input = f64::from_bits(r.xmm0 as u64);',
+                              'let output = input.sin().to_bits();',
+                              'r.xmm0 = (r.xmm0 & (!0u128 << 64)) | u128::from(output);',
+                              f'pc = {following:#x};']
+                elif target in IMPORTS:
                     argc = IMPORTS[target][1]
                     cleanup = 1 if target in CDECL_IMPORTS else argc + 1
                     lines += ['r.esp -= 4;', f'm.write32(r.esp, {following:#x});',
