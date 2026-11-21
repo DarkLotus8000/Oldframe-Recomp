@@ -8,11 +8,16 @@ from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
 from unicorn.x86_const import (UC_X86_REG_ESP, UC_X86_REG_EIP, UC_X86_REG_EAX,
                               UC_X86_REG_EBP, UC_X86_REG_ECX, UC_X86_REG_FS, UC_X86_REG_GDTR,
                               UC_X86_REG_CS, UC_X86_REG_DS, UC_X86_REG_SS, UC_X86_REG_ES)
-from startup_lift import ENTRY, CHECKPOINT, PE_READY, COOKIE, IMPORTS, CDECL_IMPORTS, DIGEST
+from startup_lift import (ENTRY, CHECKPOINT, PE_READY, COOKIE, IMPORTS,
+                          CDECL_IMPORTS, DIGEST, startup_indirect_targets)
 from lift import pe_sections
 
 
-def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xffffffff, runtime_variant=None, allocator_variant=None, locale_case=False, environment_variant=None, argv_case=False, envp_case=False, cinit_case=False, preinitializer_case=False, atexit_case=False, constructor_case=False, constructor_two_case=False, constructor_three_case=False, constructor_four_case=False, constructor_eight_case=False, constructor_nine_case=False, constructor_twelve_case=False, constructor_twenty_two_case=False, constructor_twenty_two_seed=0, constructor_twenty_four_case=False, constructor_twenty_five_case=False, constructor_thirty_two_case=False, constructor_thirty_three_case=False, constructor_thirty_seven_case=False, constructor_forty_one_case=False, constructor_forty_three_case=False, constructor_forty_four_case=False, constructor_forty_five_case=False, constructor_forty_six_case=False, constructor_forty_seven_case=False, constructor_forty_eight_case=False, constructor_forty_nine_case=False, constructor_fifty_case=False, constructor_fifty_one_case=False, constructor_fifty_two_case=False, constructor_fifty_three_case=False, constructor_fifty_five_case=False, constructor_fifty_six_case=False, constructor_fifty_seven_case=False, constructor_fifty_eight_case=False, constructor_fifty_nine_case=False, constructor_sixty_case=False, constructor_sixty_one_case=False, constructor_sixty_two_case=False, constructor_sixty_five_case=False, constructor_seventy_three_case=False, constructor_seventy_four_case=False, constructor_eighty_seven_case=False, constructor_ninety_one_case=False, constructor_ninety_two_case=False, constructor_one_hundred_two_case=False, constructor_one_hundred_ten_case=False, constructor_one_hundred_eleven_case=False, constructor_one_hundred_sixteen_case=False, constructor_one_hundred_seventeen_case=False, constructor_one_hundred_twenty_eight_case=False, constructor_one_hundred_twenty_nine_case=False, constructor_one_hundred_thirty_case=False, constructor_one_hundred_thirty_one_case=False, constructor_one_hundred_thirty_seven_case=False, constructor_one_hundred_forty_three_case=False, constructor_one_hundred_forty_four_case=False, constructor_one_hundred_forty_five_case=False, constructor_one_hundred_forty_six_case=False, constructor_one_hundred_forty_seven_case=False, constructor_one_hundred_forty_eight_case=False, constructor_one_hundred_fifty_case=False, constructor_one_hundred_fifty_four_case=False, constructor_one_hundred_fifty_six_case=False, constructor_one_hundred_sixty_four_case=False, constructor_one_hundred_sixty_eight_case=False, constructor_one_hundred_seventy_eight_case=False, constructor_one_hundred_eighty_five_case=False, constructor_one_hundred_eighty_seven_case=False, constructor_two_hundred_twenty_nine_case=False, constructor_two_hundred_thirty_three_case=False, constructor_two_hundred_sixty_seven_case=False, constructor_two_hundred_sixty_eight_case=False, constructor_two_hundred_eighty_four_case=False, constructor_three_hundred_five_case=False, constructor_three_hundred_twenty_one_case=False, constructor_three_hundred_twenty_six_case=False, constructor_three_hundred_thirty_six_case=False, constructor_three_hundred_forty_case=False, constructor_three_hundred_forty_five_case=False):
+# Reversible stand-in used only by the deterministic startup fixture.
+STARTUP_FIXTURE_POINTER_XOR = 0xa5a55a5a
+
+
+def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xffffffff, runtime_variant=None, allocator_variant=None, locale_case=False, environment_variant=None, argv_case=False, envp_case=False, cinit_case=False, preinitializer_case=False, atexit_case=False, constructor_case=False, constructor_two_case=False, constructor_three_case=False, constructor_four_case=False, constructor_eight_case=False, constructor_nine_case=False, constructor_twelve_case=False, constructor_twenty_two_case=False, constructor_twenty_two_seed=0, constructor_twenty_four_case=False, constructor_twenty_five_case=False, constructor_thirty_two_case=False, constructor_thirty_three_case=False, constructor_thirty_seven_case=False, constructor_forty_one_case=False, constructor_forty_three_case=False, constructor_forty_four_case=False, constructor_forty_five_case=False, constructor_forty_six_case=False, constructor_forty_seven_case=False, constructor_forty_eight_case=False, constructor_forty_nine_case=False, constructor_fifty_case=False, constructor_fifty_one_case=False, constructor_fifty_two_case=False, constructor_fifty_three_case=False, constructor_fifty_five_case=False, constructor_fifty_six_case=False, constructor_fifty_seven_case=False, constructor_fifty_eight_case=False, constructor_fifty_nine_case=False, constructor_sixty_case=False, constructor_sixty_one_case=False, constructor_sixty_two_case=False, constructor_sixty_five_case=False, constructor_seventy_three_case=False, constructor_seventy_four_case=False, constructor_eighty_seven_case=False, constructor_ninety_one_case=False, constructor_ninety_two_case=False, constructor_one_hundred_two_case=False, constructor_one_hundred_ten_case=False, constructor_one_hundred_eleven_case=False, constructor_one_hundred_sixteen_case=False, constructor_one_hundred_seventeen_case=False, constructor_one_hundred_twenty_eight_case=False, constructor_one_hundred_twenty_nine_case=False, constructor_one_hundred_thirty_case=False, constructor_one_hundred_thirty_one_case=False, constructor_one_hundred_thirty_seven_case=False, constructor_one_hundred_forty_three_case=False, constructor_one_hundred_forty_four_case=False, constructor_one_hundred_forty_five_case=False, constructor_one_hundred_forty_six_case=False, constructor_one_hundred_forty_seven_case=False, constructor_one_hundred_forty_eight_case=False, constructor_one_hundred_fifty_case=False, constructor_one_hundred_fifty_four_case=False, constructor_one_hundred_fifty_six_case=False, constructor_one_hundred_sixty_four_case=False, constructor_one_hundred_sixty_eight_case=False, constructor_one_hundred_seventy_eight_case=False, constructor_one_hundred_eighty_five_case=False, constructor_one_hundred_eighty_seven_case=False, constructor_two_hundred_twenty_nine_case=False, constructor_two_hundred_thirty_three_case=False, constructor_two_hundred_sixty_seven_case=False, constructor_two_hundred_sixty_eight_case=False, constructor_two_hundred_eighty_four_case=False, constructor_three_hundred_five_case=False, constructor_three_hundred_twenty_one_case=False, constructor_three_hundred_twenty_six_case=False, constructor_three_hundred_thirty_six_case=False, constructor_three_hundred_forty_case=False, constructor_three_hundred_forty_five_case=False, constructor_three_hundred_fifty_four_case=False, constructor_three_hundred_eighty_eight_case=False, constructor_four_hundred_case=False, constructor_four_hundred_one_case=False, constructor_four_hundred_sixteen_case=False, constructor_four_hundred_fifty_four_case=False, constructor_four_hundred_fifty_five_case=False, constructor_four_hundred_fifty_six_case=False, constructor_four_hundred_fifty_seven_case=False, constructor_four_hundred_fifty_eight_case=False, constructor_four_hundred_fifty_nine_case=False, constructor_four_hundred_sixty_case=False, constructor_four_hundred_sixty_five_case=False, constructor_four_hundred_sixty_six_case=False, constructor_four_hundred_seventy_one_case=False, constructor_batch_case=False):
     base, sections = pe_sections(image)
     uc = Uc(UC_ARCH_X86, UC_MODE_32)
     uc.mem_map(0, 0x2000000)
@@ -111,7 +116,7 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
     if constructor_sixty_case == 2:
         uc.mem_write(0x131b234, b'\x01')
         write(0x131b1f0, 0x80000); write(0x131b1f4, 0x80000); write(0x131b1f8, 0x80008)
-    if constructor_one_hundred_forty_five_case or constructor_one_hundred_forty_six_case or constructor_one_hundred_forty_seven_case or constructor_one_hundred_forty_eight_case or constructor_one_hundred_fifty_case or constructor_one_hundred_fifty_four_case or constructor_one_hundred_fifty_six_case or constructor_one_hundred_sixty_four_case or constructor_one_hundred_sixty_eight_case or constructor_one_hundred_seventy_eight_case or constructor_one_hundred_eighty_five_case or constructor_one_hundred_eighty_seven_case or constructor_two_hundred_twenty_nine_case or constructor_two_hundred_thirty_three_case or constructor_two_hundred_sixty_seven_case or constructor_two_hundred_sixty_eight_case or constructor_two_hundred_eighty_four_case or constructor_three_hundred_five_case or constructor_three_hundred_twenty_one_case or constructor_three_hundred_twenty_six_case or constructor_three_hundred_thirty_six_case or constructor_three_hundred_forty_case or constructor_three_hundred_forty_five_case:
+    if constructor_batch_case or constructor_one_hundred_forty_five_case or constructor_one_hundred_forty_six_case or constructor_one_hundred_forty_seven_case or constructor_one_hundred_forty_eight_case or constructor_one_hundred_fifty_case or constructor_one_hundred_fifty_four_case or constructor_one_hundred_fifty_six_case or constructor_one_hundred_sixty_four_case or constructor_one_hundred_sixty_eight_case or constructor_one_hundred_seventy_eight_case or constructor_one_hundred_eighty_five_case or constructor_one_hundred_eighty_seven_case or constructor_two_hundred_twenty_nine_case or constructor_two_hundred_thirty_three_case or constructor_two_hundred_sixty_seven_case or constructor_two_hundred_sixty_eight_case or constructor_two_hundred_eighty_four_case or constructor_three_hundred_five_case or constructor_three_hundred_twenty_one_case or constructor_three_hundred_twenty_six_case or constructor_three_hundred_thirty_six_case or constructor_three_hundred_forty_case or constructor_three_hundred_forty_five_case or constructor_three_hundred_fifty_four_case or constructor_three_hundred_eighty_eight_case or constructor_four_hundred_case or constructor_four_hundred_one_case or constructor_four_hundred_sixteen_case or constructor_four_hundred_fifty_four_case or constructor_four_hundred_fifty_five_case or constructor_four_hundred_fifty_six_case or constructor_four_hundred_fifty_seven_case or constructor_four_hundred_fifty_eight_case or constructor_four_hundred_fifty_nine_case or constructor_four_hundred_sixty_case or constructor_four_hundred_sixty_five_case or constructor_four_hundred_sixty_six_case or constructor_four_hundred_seventy_one_case:
         write(0x1317f10, 1)
         write(0x1317f18, 42)
     def hook(uc, pc, size, _):
@@ -170,7 +175,7 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                 if read(sp+4) not in (7,8): raise RuntimeError('unexpected original TLS index')
                 result = 0 if runtime_variant == 11 else 1
                 if result: tls[read(sp+4)] = read(sp+8)
-            elif name in ('EncodePointer', 'DecodePointer'): result = read(sp+4) ^ 0xa5a55a5a
+            elif name in ('EncodePointer', 'DecodePointer'): result = read(sp+4) ^ STARTUP_FIXTURE_POINTER_XOR
             elif name == 'security_cookie_check':
                 if uc.reg_read(UC_X86_REG_ECX) != read(COOKIE): raise RuntimeError('original security cookie mismatch')
                 result = uc.reg_read(UC_X86_REG_ECX)
@@ -320,7 +325,7 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                 heap_state['next'] = (result+size+15)&~15
             elif name == 'game_allocate':
                 descriptor, size, count = read(sp+4), read(sp+8), read(sp+12)
-                if descriptor not in (0x128f238, 0x129a4c8, 0x12a18a8) or count != 1 or not size or (descriptor == 0x129a4c8 and size != 8) or (descriptor == 0x12a18a8 and size != 0x30):
+                if descriptor not in (0x128f238, 0x129a4c8, 0x12a18a8, 0x1313c98, 0x12a79f0, 0x12cacec) or count != 1 or not size or (descriptor == 0x129a4c8 and size != 8) or (descriptor == 0x12a18a8 and size != 0x30) or (descriptor == 0x1313c98 and size != 0x38) or (descriptor == 0x12a79f0 and size != 0x30) or (descriptor == 0x12cacec and size != 8):
                     raise RuntimeError(f'unexpected original game allocation {[descriptor, size, count]}')
                 result = 0 if descriptor == 0x129a4c8 and (constructor_one_hundred_thirty_one_case == 2 or constructor_one_hundred_thirty_seven_case == 2 or constructor_one_hundred_forty_three_case == 2 or constructor_one_hundred_forty_four_case == 2 or constructor_one_hundred_fifty_case == 2) else heap_state['next']
                 total = size * count
@@ -395,11 +400,12 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                 if vector != 0x131b1f0 or position != end or count != 1 or end != capacity:
                     raise RuntimeError(f'unexpected original singleton vector insertion {[vector, position, count, source]}')
                 existing = 0 if not begin else (end-begin)//4
-                if existing > 1: raise RuntimeError(f'unexpected original singleton vector length {existing}')
                 result = heap_state['next']
                 if existing: uc.mem_write(result, bytes(uc.mem_read(begin, existing*4)))
-                write(result+existing*4, read(source)); write(vector, result); write(vector+4, result+(existing+1)*4); write(vector+8, result+(existing+1)*4)
-                heap_state['next'] = (result+(existing+1)*4+15)&~15
+                length = existing + 1
+                capacity = length * 2 if existing >= 2 else length
+                write(result+existing*4, read(source)); write(vector, result); write(vector+4, result+length*4); write(vector+8, result+capacity*4)
+                heap_state['next'] = (result+capacity*4+15)&~15
             elif name == 'vector_insert_u8':
                 vector = uc.reg_read(UC_X86_REG_ECX)
                 position, count, source = read(sp+4), read(sp+8), read(sp+12)
@@ -430,7 +436,7 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
             uc.reg_write(UC_X86_REG_EIP, read(sp))
             uc.reg_write(UC_X86_REG_ESP, sp+4+(0 if slot in CDECL_IMPORTS else argc*4))
     uc.hook_add(UC_HOOK_CODE, hook)
-    uc.emu_start(start, 0x1ffffff, count=131072)
+    uc.emu_start(start, 0x1ffffff, count=262144)
     if uc.reg_read(UC_X86_REG_EIP) != stop:
         raise RuntimeError(f'original x86 failed to reach checkpoint within budget: eip={uc.reg_read(UC_X86_REG_EIP):#x} stop={stop:#x}')
     if stop == CHECKPOINT:
@@ -453,50 +459,156 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), argc, argv, heap_state['next'],
                  pointers, data, calls), visited)
+    if constructor_batch_case or constructor_four_hundred_seventy_one_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], bytes(uc.mem_read(0x1327000, 0x1000)).hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_four_hundred_sixty_six_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], bytes(uc.mem_read(0x1327000, 0x1000)).hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_four_hundred_sixty_five_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], bytes(uc.mem_read(0x1327000, 0x1000)).hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_four_hundred_sixty_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], bytes(uc.mem_read(0x1327000, 0x1000)).hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_four_hundred_fifty_nine_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], bytes(uc.mem_read(0x1327000, 0x1000)).hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_four_hundred_fifty_eight_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], bytes(uc.mem_read(0x1327000, 0x1000)).hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_four_hundred_fifty_seven_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], bytes(uc.mem_read(0x1327000, 0x1000)).hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_four_hundred_fifty_six_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], bytes(uc.mem_read(0x1327000, 0x1000)).hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_four_hundred_fifty_five_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], bytes(uc.mem_read(0x1328000, 0x1000)).hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_four_hundred_fifty_four_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], bytes(uc.mem_read(0x1326080, 0x1f80)).hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_four_hundred_sixteen_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        state = bytes(uc.mem_read(0x128d970, 0x90)) + bytes(uc.mem_read(0x1327000, 0x1000))
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], state.hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_four_hundred_one_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], bytes(uc.mem_read(0x12a7794, 0x10)).hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_four_hundred_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], bytes(uc.mem_read(0x1326000, 0x1000)).hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_three_hundred_eighty_eight_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], bytes(uc.mem_read(0x1324ac0, 0x1540)).hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
+    if constructor_three_hundred_fifty_four_case:
+        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
+        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
+                 heap_state['next'], bytes(uc.mem_read(0x13242b0, 0x750)).hex(),
+                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
+                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_three_hundred_forty_five_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x13240c0, 0x1e0)).hex(),
                  bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_three_hundred_forty_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x1324028, 0x98)).hex(),
                  bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_three_hundred_thirty_six_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x1323720, 0x690)).hex(),
                  bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_three_hundred_twenty_six_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x129ff7c, 0xa4)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_three_hundred_twenty_one_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x1322e5c, 0x8c0)).hex(),
                  bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_three_hundred_five_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x13223d8, 0xa80)).hex(),
                  bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_two_hundred_eighty_four_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         registry_object = read(0x131c580)
         registry = [read(registry_object+n*4) for n in range(3)]
         registry_data = bytes(uc.mem_read(registry[0], registry[1]-registry[0])).hex()
@@ -506,7 +618,7 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_two_hundred_sixty_eight_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         registry = [read(0x131c580+n*4) for n in range(3)]
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], registry, bytes(uc.mem_read(0x13220c8, 0x2c)).hex(),
@@ -514,70 +626,70 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_two_hundred_sixty_seven_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131f0a0, 0x3018)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_two_hundred_thirty_three_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131ed24, 0x378)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_two_hundred_twenty_nine_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131ed24, 0x1d0)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_eighty_seven_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131ed28, 0x128)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_eighty_five_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x131e978, 0x3b0)).hex(),
                  bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_seventy_eight_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131e400, 0x578)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_sixty_eight_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x131def8, 0x1e0)).hex(),
                  bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_sixty_four_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131d9e8, 0x4f0)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_fifty_six_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x131d99c, 0x48)).hex(),
                  bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_fifty_four_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131d738, 0x260)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_fifty_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x131d5f0, 0x144)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
@@ -597,46 +709,46 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  bytes(uc.mem_read(0x131d5f0, 9)).hex(), calls), visited)
     if constructor_one_hundred_forty_four_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x131d17c, 0x474)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_forty_three_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x131d17c, 0x44c)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_thirty_seven_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x131d048, 0x1e8)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_thirty_one_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         callback_ptr = read(0x131d044)
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x131d020, 0x28)).hex(),
                  bytes(uc.mem_read(callback_ptr, 8)).hex(), bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_thirty_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         string_ptr, string_len = read(0x131d004), read(0x131d008)
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x131cffc, 0x18)).hex(),
                  bytes(uc.mem_read(string_ptr, string_len+1)).hex(), bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_twenty_nine_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         string_ptr, string_len = read(0x131cfe0), read(0x131cfe4)
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x131cfd8, 0x18)).hex(),
                  bytes(uc.mem_read(string_ptr, string_len+1)).hex(), bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_twenty_eight_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131cad0, 0x508)).hex(), bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_seventeen_case:
@@ -646,19 +758,19 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  bytes(uc.mem_read(tail_start, heap_state['next']-tail_start)).hex(), calls), visited)
     if constructor_one_hundred_sixteen_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131c7c8, 0x2cc)).hex(), bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_eleven_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         string_ptr, string_len = read(0x131c564), read(0x131c568)
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x131c55c, 0x18)).hex(),
                  bytes(uc.mem_read(string_ptr, string_len+1)).hex(), bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_ten_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         object_ptr = read(0x131c524)
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x131c4d4, 0x8c)).hex(),
@@ -666,14 +778,14 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_one_hundred_two_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         string_ptr, string_len = read(0x131c4a8), read(0x131c4ac)
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], bytes(uc.mem_read(0x131c2e4, 0x1f0)).hex(),
                  bytes(uc.mem_read(string_ptr, string_len+1)).hex(), bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_ninety_two_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         first, second = read(0x131c2ac), read(0x131c2c4)
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], read(0x128d970), bytes(uc.mem_read(0x131c198, 0x14c)).hex(),
@@ -681,40 +793,40 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_ninety_one_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131be38, 0x360)).hex(), bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_eighty_seven_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         string_ptr = read(0x131ba9c)
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  heap_state['next'], read(0x128d970), bytes(uc.mem_read(0x131b878, 0x5c0)).hex(),
                  bytes(uc.mem_read(string_ptr, 24)).hex(), bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_seventy_four_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  read(0x128d96c), read(0x128d970), bytes(uc.mem_read(0x131b808, 0x70)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_seventy_three_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131b358, 0x4b0)).hex(), bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_sixty_five_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131b26c, 0xe4)).hex(), bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_sixty_two_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131b25c, 0x10)).hex(), bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_sixty_one_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131b24c, 0x10)).hex(), bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_sixty_case:
@@ -731,46 +843,46 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  uc.reg_read(UC_X86_REG_EAX), read(0x131b238), calls), visited)
     if constructor_fifty_seven_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), heap_state['next'], read(0x80000),
                  bytes(uc.mem_read(0x131b1e0, 0x50)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_fifty_six_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), read(0x131b1c8), read(0x128d970),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_fifty_five_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_fifty_three_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), read(0x131b1b8), read(0x131b1bc),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_fifty_two_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131aff8, 0x19c)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_fifty_one_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), heap_state['next'],
                  bytes(uc.mem_read(0x128eb94, 12)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_fifty_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         shared = read(0x131ad88)
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), shared, heap_state['next'],
@@ -779,7 +891,7 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_forty_nine_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         shared = read(0x131ad88)
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), shared, heap_state['next'],
@@ -788,7 +900,7 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_forty_eight_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         shared = read(0x131ad88)
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), shared, heap_state['next'],
@@ -797,7 +909,7 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_forty_seven_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), read(0x131ad88), heap_state['next'],
                  bytes(uc.mem_read(0x131ad98, 0x88)).hex(),
@@ -805,7 +917,7 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_forty_six_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), read(0x131acb0),
                  bytes(uc.mem_read(0x80000, 0x1c)).hex(),
@@ -816,20 +928,20 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  bytes(uc.mem_read(0x131ac9c, 20)).hex(), calls), visited)
     if constructor_forty_four_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131ac80, 20)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_forty_three_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), read(0x128d96c),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_forty_one_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131a958, 0x1d0)).hex(),
@@ -837,7 +949,7 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_thirty_seven_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x131a024, 0x58)).hex(),
@@ -849,34 +961,34 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  read(0x1317f38), calls), visited)
     if constructor_thirty_two_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x1316d7c, 16)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_twenty_five_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(0x1316bc0, 0x1a5)).hex(),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_twenty_four_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX),
                  bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
     if constructor_twenty_two_case:
-        begin = read(0x1359da8) ^ 0xa5a55a5a
-        end = read(0x1359da4) ^ 0xa5a55a5a
+        begin = read(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR
+        end = read(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), read(0x1316920),
                  bytes(uc.mem_read(0x1316924,0x268)).hex(),
                  bytes(uc.mem_read(begin,end-begin)).hex(), calls), visited)
     if constructor_twelve_case:
-        begin = read(0x1359da8) ^ 0xa5a55a5a
-        end = read(0x1359da4) ^ 0xa5a55a5a
+        begin = read(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR
+        end = read(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), bytes(uc.mem_read(0x1316618,0x30c)).hex(),
                  bytes(uc.mem_read(begin,end-begin)).hex(), calls), visited)
@@ -884,27 +996,27 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), bytes(uc.mem_read(0x13165d0,0x40)).hex(), calls), visited)
     if constructor_eight_case:
-        begin = read(0x1359da8) ^ 0xa5a55a5a
-        end = read(0x1359da4) ^ 0xa5a55a5a
+        begin = read(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR
+        end = read(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), bytes(uc.mem_read(0x13163e0,0x1f0)).hex(),
                  bytes(uc.mem_read(begin,end-begin)).hex(), calls), visited)
     if constructor_four_case:
-        begin = read(0x1359da8) ^ 0xa5a55a5a
-        end = read(0x1359da4) ^ 0xa5a55a5a
+        begin = read(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR
+        end = read(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), read(0x131a9e0),
                  bytes(uc.mem_read(0x1316358,0x84)).hex(),
                  bytes(uc.mem_read(begin,end-begin)).hex(), calls), visited)
     if constructor_three_case:
-        begin = read(0x1359da8) ^ 0xa5a55a5a
-        end = read(0x1359da4) ^ 0xa5a55a5a
+        begin = read(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR
+        end = read(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), bytes(uc.mem_read(0x1316344,13)).hex(),
                  bytes(uc.mem_read(begin,end-begin)).hex(), calls), visited)
     if constructor_two_case:
-        begin = read(0x1359da8) ^ 0xa5a55a5a
-        end = read(0x1359da4) ^ 0xa5a55a5a
+        begin = read(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR
+        end = read(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), bytes(uc.mem_read(0x1316334,13)).hex(),
                  bytes(uc.mem_read(begin,end-begin)).hex(), calls), visited)
@@ -914,7 +1026,7 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                  read(0x1316330), calls), visited)
     if atexit_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ 0xa5a55a5a, encoded_end ^ 0xa5a55a5a
+        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), begin, end, encoded_begin,
                  encoded_end, bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
@@ -954,8 +1066,105 @@ def main():
     if hashlib.sha256(image).hexdigest() != DIGEST:
         raise RuntimeError('reference executable hash mismatch')
     output = subprocess.check_output([str(args.native.resolve()), '.', '--startup'], text=True)
-    cases, frame_cases, runtime_cases, allocator_cases, locale_cases, environment_cases, argv_cases, envp_cases, cinit_cases, preinitializer_cases, atexit_cases, constructor_cases, constructor_two_cases, constructor_three_cases, constructor_four_cases, constructor_eight_cases, constructor_nine_cases, constructor_twelve_cases, constructor_twenty_two_cases, constructor_twenty_four_cases, constructor_twenty_five_cases, constructor_thirty_two_cases, constructor_thirty_three_cases, constructor_thirty_seven_cases, constructor_forty_one_cases, constructor_forty_three_cases, constructor_forty_four_cases, constructor_forty_five_cases, constructor_forty_six_cases, constructor_forty_seven_cases, constructor_forty_eight_cases, constructor_forty_nine_cases, constructor_fifty_cases, constructor_fifty_one_cases, constructor_fifty_two_cases, constructor_fifty_three_cases, constructor_fifty_five_cases, constructor_fifty_six_cases, constructor_fifty_seven_cases, constructor_fifty_eight_cases, constructor_fifty_nine_cases, constructor_sixty_cases, constructor_sixty_one_cases, constructor_sixty_two_cases, constructor_sixty_five_cases, constructor_seventy_three_cases, constructor_seventy_four_cases, constructor_eighty_seven_cases, constructor_ninety_one_cases, constructor_ninety_two_cases, constructor_one_hundred_two_cases, constructor_one_hundred_ten_cases, constructor_one_hundred_eleven_cases, constructor_one_hundred_sixteen_cases, constructor_one_hundred_seventeen_cases, constructor_one_hundred_twenty_eight_cases, constructor_one_hundred_twenty_nine_cases, constructor_one_hundred_thirty_cases, constructor_one_hundred_thirty_one_cases, constructor_one_hundred_thirty_seven_cases, constructor_one_hundred_forty_three_cases, constructor_one_hundred_forty_four_cases, constructor_one_hundred_forty_five_cases, constructor_one_hundred_forty_six_cases, constructor_one_hundred_forty_seven_cases, constructor_one_hundred_forty_eight_cases, constructor_one_hundred_fifty_cases, constructor_one_hundred_fifty_four_cases, constructor_one_hundred_fifty_six_cases, constructor_one_hundred_sixty_four_cases, constructor_one_hundred_sixty_eight_cases, constructor_one_hundred_seventy_eight_cases, constructor_one_hundred_eighty_five_cases, constructor_one_hundred_eighty_seven_cases, constructor_two_hundred_twenty_nine_cases, constructor_two_hundred_thirty_three_cases, constructor_two_hundred_sixty_seven_cases, constructor_two_hundred_sixty_eight_cases, constructor_two_hundred_eighty_four_cases, constructor_three_hundred_five_cases, constructor_three_hundred_twenty_one_cases, constructor_three_hundred_twenty_six_cases, constructor_three_hundred_thirty_six_cases, constructor_three_hundred_forty_cases, constructor_three_hundred_forty_five_cases, visited = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, set()
+    cases, frame_cases, runtime_cases, allocator_cases, locale_cases, environment_cases, argv_cases, envp_cases, cinit_cases, preinitializer_cases, atexit_cases, constructor_cases, constructor_two_cases, constructor_three_cases, constructor_four_cases, constructor_eight_cases, constructor_nine_cases, constructor_twelve_cases, constructor_twenty_two_cases, constructor_twenty_four_cases, constructor_twenty_five_cases, constructor_thirty_two_cases, constructor_thirty_three_cases, constructor_thirty_seven_cases, constructor_forty_one_cases, constructor_forty_three_cases, constructor_forty_four_cases, constructor_forty_five_cases, constructor_forty_six_cases, constructor_forty_seven_cases, constructor_forty_eight_cases, constructor_forty_nine_cases, constructor_fifty_cases, constructor_fifty_one_cases, constructor_fifty_two_cases, constructor_fifty_three_cases, constructor_fifty_five_cases, constructor_fifty_six_cases, constructor_fifty_seven_cases, constructor_fifty_eight_cases, constructor_fifty_nine_cases, constructor_sixty_cases, constructor_sixty_one_cases, constructor_sixty_two_cases, constructor_sixty_five_cases, constructor_seventy_three_cases, constructor_seventy_four_cases, constructor_eighty_seven_cases, constructor_ninety_one_cases, constructor_ninety_two_cases, constructor_one_hundred_two_cases, constructor_one_hundred_ten_cases, constructor_one_hundred_eleven_cases, constructor_one_hundred_sixteen_cases, constructor_one_hundred_seventeen_cases, constructor_one_hundred_twenty_eight_cases, constructor_one_hundred_twenty_nine_cases, constructor_one_hundred_thirty_cases, constructor_one_hundred_thirty_one_cases, constructor_one_hundred_thirty_seven_cases, constructor_one_hundred_forty_three_cases, constructor_one_hundred_forty_four_cases, constructor_one_hundred_forty_five_cases, constructor_one_hundred_forty_six_cases, constructor_one_hundred_forty_seven_cases, constructor_one_hundred_forty_eight_cases, constructor_one_hundred_fifty_cases, constructor_one_hundred_fifty_four_cases, constructor_one_hundred_fifty_six_cases, constructor_one_hundred_sixty_four_cases, constructor_one_hundred_sixty_eight_cases, constructor_one_hundred_seventy_eight_cases, constructor_one_hundred_eighty_five_cases, constructor_one_hundred_eighty_seven_cases, constructor_two_hundred_twenty_nine_cases, constructor_two_hundred_thirty_three_cases, constructor_two_hundred_sixty_seven_cases, constructor_two_hundred_sixty_eight_cases, constructor_two_hundred_eighty_four_cases, constructor_three_hundred_five_cases, constructor_three_hundred_twenty_one_cases, constructor_three_hundred_twenty_six_cases, constructor_three_hundred_thirty_six_cases, constructor_three_hundred_forty_cases, constructor_three_hundred_forty_five_cases, constructor_three_hundred_fifty_four_cases, constructor_three_hundred_eighty_eight_cases, constructor_four_hundred_cases, constructor_four_hundred_one_cases, constructor_four_hundred_sixteen_cases, constructor_four_hundred_fifty_four_cases, constructor_four_hundred_fifty_five_cases, constructor_four_hundred_fifty_six_cases, constructor_four_hundred_fifty_seven_cases, constructor_four_hundred_fifty_eight_cases, constructor_four_hundred_fifty_nine_cases, constructor_four_hundred_sixty_cases, constructor_four_hundred_sixty_five_cases, constructor_four_hundred_sixty_six_cases, constructor_four_hundred_seventy_one_cases, visited = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, set()
+    batched_constructor_cases = 0
     for line in output.splitlines():
+        if line.startswith('STARTUP_CONSTRUCTOR_473_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_batch_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor batch 473 mismatch: actual={actual}; original={expected}')
+            visited.update(trace); batched_constructor_cases += 1; print('STARTUP_CONSTRUCTOR_473_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_471_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_seventy_one_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor four-hundred-seventy-one mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_four_hundred_seventy_one_cases += 1; print('STARTUP_CONSTRUCTOR_471_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_466_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_sixty_six_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor four-hundred-sixty-six mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_four_hundred_sixty_six_cases += 1; print('STARTUP_CONSTRUCTOR_466_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_465_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_sixty_five_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor four-hundred-sixty-five mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_four_hundred_sixty_five_cases += 1; print('STARTUP_CONSTRUCTOR_465_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_460_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_sixty_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor four-hundred-sixty mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_four_hundred_sixty_cases += 1; print('STARTUP_CONSTRUCTOR_460_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_459_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_fifty_nine_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor four-hundred-fifty-nine mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_four_hundred_fifty_nine_cases += 1; print('STARTUP_CONSTRUCTOR_459_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_458_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_fifty_eight_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor four-hundred-fifty-eight mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_four_hundred_fifty_eight_cases += 1; print('STARTUP_CONSTRUCTOR_458_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_457_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_fifty_seven_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor four-hundred-fifty-seven mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_four_hundred_fifty_seven_cases += 1; print('STARTUP_CONSTRUCTOR_457_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_456_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_fifty_six_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor four-hundred-fifty-six mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_four_hundred_fifty_six_cases += 1; print('STARTUP_CONSTRUCTOR_456_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_455_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_fifty_five_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor four-hundred-fifty-five mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_four_hundred_fifty_five_cases += 1; print('STARTUP_CONSTRUCTOR_455_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_454_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_fifty_four_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor four-hundred-fifty-four mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_four_hundred_fifty_four_cases += 1; print('STARTUP_CONSTRUCTOR_454_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_416_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_sixteen_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor four-hundred-sixteen mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_four_hundred_sixteen_cases += 1; print('STARTUP_CONSTRUCTOR_416_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_401_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_one_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor four-hundred-one mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_four_hundred_one_cases += 1; print('STARTUP_CONSTRUCTOR_401_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_400_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor four-hundred mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_four_hundred_cases += 1; print('STARTUP_CONSTRUCTOR_400_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_388_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_three_hundred_eighty_eight_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor three-hundred-eighty-eight mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_three_hundred_eighty_eight_cases += 1; print('STARTUP_CONSTRUCTOR_388_READY original-x86=MATCH'); continue
+        if line.startswith('STARTUP_CONSTRUCTOR_354_READY '):
+            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
+            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_three_hundred_fifty_four_case=True)
+            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
+            if actual != expected: raise RuntimeError(f'constructor three-hundred-fifty-four mismatch: actual={actual}; original={expected}')
+            visited.update(trace); constructor_three_hundred_fifty_four_cases += 1; print('STARTUP_CONSTRUCTOR_354_READY original-x86=MATCH'); continue
         if line.startswith('STARTUP_CONSTRUCTOR_345_READY '):
             fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
             expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_three_hundred_forty_five_case=True)
@@ -1691,12 +1900,29 @@ def main():
     if constructor_three_hundred_thirty_six_cases != 1: raise RuntimeError(f'expected one constructor three-hundred-thirty-six case, got {constructor_three_hundred_thirty_six_cases}')
     if constructor_three_hundred_forty_cases != 1: raise RuntimeError(f'expected one constructor three-hundred-forty case, got {constructor_three_hundred_forty_cases}')
     if constructor_three_hundred_forty_five_cases != 1: raise RuntimeError(f'expected one constructor three-hundred-forty-five case, got {constructor_three_hundred_forty_five_cases}')
+    if constructor_three_hundred_fifty_four_cases != 1: raise RuntimeError(f'expected one constructor three-hundred-fifty-four case, got {constructor_three_hundred_fifty_four_cases}')
+    if constructor_three_hundred_eighty_eight_cases != 1: raise RuntimeError(f'expected one constructor three-hundred-eighty-eight case, got {constructor_three_hundred_eighty_eight_cases}')
+    if constructor_four_hundred_cases != 1: raise RuntimeError(f'expected one constructor four-hundred case, got {constructor_four_hundred_cases}')
+    if constructor_four_hundred_one_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-one case, got {constructor_four_hundred_one_cases}')
+    if constructor_four_hundred_sixteen_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-sixteen case, got {constructor_four_hundred_sixteen_cases}')
+    if constructor_four_hundred_fifty_four_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-fifty-four case, got {constructor_four_hundred_fifty_four_cases}')
+    if constructor_four_hundred_fifty_five_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-fifty-five case, got {constructor_four_hundred_fifty_five_cases}')
+    if constructor_four_hundred_fifty_six_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-fifty-six case, got {constructor_four_hundred_fifty_six_cases}')
+    if constructor_four_hundred_fifty_seven_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-fifty-seven case, got {constructor_four_hundred_fifty_seven_cases}')
+    if constructor_four_hundred_fifty_eight_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-fifty-eight case, got {constructor_four_hundred_fifty_eight_cases}')
+    if constructor_four_hundred_fifty_nine_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-fifty-nine case, got {constructor_four_hundred_fifty_nine_cases}')
+    if constructor_four_hundred_sixty_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-sixty case, got {constructor_four_hundred_sixty_cases}')
+    if constructor_four_hundred_sixty_five_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-sixty-five case, got {constructor_four_hundred_sixty_five_cases}')
+    if constructor_four_hundred_sixty_six_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-sixty-six case, got {constructor_four_hundred_sixty_six_cases}')
+    if constructor_four_hundred_seventy_one_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-seventy-one case, got {constructor_four_hundred_seventy_one_cases}')
+    if batched_constructor_cases != 1: raise RuntimeError(f'expected one batched constructor case, got {batched_constructor_cases}')
     from startup_lift import discover, RANGES, STOPS
-    code = discover(image, ENTRY, RANGES, STOPS, IMPORTS)
+    code = discover(image, ENTRY, RANGES, STOPS, IMPORTS,
+                    indirect_targets=startup_indirect_targets(image, RANGES))
     missing = set(code)-visited
     if missing:
         raise RuntimeError(f'unexercised instructions: {sorted(missing)}')
-    print(f'PASS: {cases} cookie, {frame_cases} frame, {runtime_cases} runtime, {allocator_cases} allocator, {locale_cases} locale, {environment_cases} environment, {argv_cases} argv, {envp_cases} envp, {cinit_cases} cinit, {preinitializer_cases} preinitializer, {atexit_cases} atexit, {constructor_cases + constructor_two_cases + constructor_three_cases + constructor_four_cases + constructor_eight_cases + constructor_nine_cases + constructor_twelve_cases + constructor_twenty_two_cases + constructor_twenty_four_cases + constructor_twenty_five_cases + constructor_thirty_two_cases + constructor_thirty_three_cases + constructor_thirty_seven_cases + constructor_forty_one_cases + constructor_forty_three_cases + constructor_forty_four_cases + constructor_forty_five_cases + constructor_forty_six_cases + constructor_forty_seven_cases + constructor_forty_eight_cases + constructor_forty_nine_cases + constructor_fifty_cases + constructor_fifty_one_cases + constructor_fifty_two_cases + constructor_fifty_three_cases + constructor_fifty_five_cases + constructor_fifty_six_cases + constructor_fifty_seven_cases + constructor_fifty_eight_cases + constructor_fifty_nine_cases + constructor_sixty_cases + constructor_sixty_one_cases + constructor_sixty_two_cases + constructor_sixty_five_cases + constructor_seventy_three_cases + constructor_seventy_four_cases + constructor_eighty_seven_cases + constructor_ninety_one_cases + constructor_ninety_two_cases + constructor_one_hundred_two_cases + constructor_one_hundred_ten_cases + constructor_one_hundred_eleven_cases + constructor_one_hundred_sixteen_cases + constructor_one_hundred_seventeen_cases + constructor_one_hundred_twenty_eight_cases + constructor_one_hundred_twenty_nine_cases + constructor_one_hundred_thirty_cases + constructor_one_hundred_thirty_one_cases + constructor_one_hundred_thirty_seven_cases + constructor_one_hundred_forty_three_cases + constructor_one_hundred_forty_four_cases + constructor_one_hundred_forty_five_cases + constructor_one_hundred_forty_six_cases + constructor_one_hundred_forty_seven_cases + constructor_one_hundred_forty_eight_cases + constructor_one_hundred_fifty_cases + constructor_one_hundred_fifty_four_cases + constructor_one_hundred_fifty_six_cases + constructor_one_hundred_sixty_four_cases + constructor_one_hundred_sixty_eight_cases + constructor_one_hundred_seventy_eight_cases + constructor_one_hundred_eighty_five_cases + constructor_one_hundred_eighty_seven_cases + constructor_two_hundred_twenty_nine_cases + constructor_two_hundred_thirty_three_cases + constructor_two_hundred_sixty_seven_cases + constructor_two_hundred_sixty_eight_cases + constructor_two_hundred_eighty_four_cases + constructor_three_hundred_five_cases + constructor_three_hundred_twenty_one_cases + constructor_three_hundred_twenty_six_cases + constructor_three_hundred_thirty_six_cases + constructor_three_hundred_forty_cases + constructor_three_hundred_forty_five_cases} constructor original-x86 comparisons; all {len(code)} reachable instructions exercised.')
+    print(f'PASS: {cases} cookie, {frame_cases} frame, {runtime_cases} runtime, {allocator_cases} allocator, {locale_cases} locale, {environment_cases} environment, {argv_cases} argv, {envp_cases} envp, {cinit_cases} cinit, {preinitializer_cases} preinitializer, {atexit_cases} atexit, {constructor_cases + constructor_two_cases + constructor_three_cases + constructor_four_cases + constructor_eight_cases + constructor_nine_cases + constructor_twelve_cases + constructor_twenty_two_cases + constructor_twenty_four_cases + constructor_twenty_five_cases + constructor_thirty_two_cases + constructor_thirty_three_cases + constructor_thirty_seven_cases + constructor_forty_one_cases + constructor_forty_three_cases + constructor_forty_four_cases + constructor_forty_five_cases + constructor_forty_six_cases + constructor_forty_seven_cases + constructor_forty_eight_cases + constructor_forty_nine_cases + constructor_fifty_cases + constructor_fifty_one_cases + constructor_fifty_two_cases + constructor_fifty_three_cases + constructor_fifty_five_cases + constructor_fifty_six_cases + constructor_fifty_seven_cases + constructor_fifty_eight_cases + constructor_fifty_nine_cases + constructor_sixty_cases + constructor_sixty_one_cases + constructor_sixty_two_cases + constructor_sixty_five_cases + constructor_seventy_three_cases + constructor_seventy_four_cases + constructor_eighty_seven_cases + constructor_ninety_one_cases + constructor_ninety_two_cases + constructor_one_hundred_two_cases + constructor_one_hundred_ten_cases + constructor_one_hundred_eleven_cases + constructor_one_hundred_sixteen_cases + constructor_one_hundred_seventeen_cases + constructor_one_hundred_twenty_eight_cases + constructor_one_hundred_twenty_nine_cases + constructor_one_hundred_thirty_cases + constructor_one_hundred_thirty_one_cases + constructor_one_hundred_thirty_seven_cases + constructor_one_hundred_forty_three_cases + constructor_one_hundred_forty_four_cases + constructor_one_hundred_forty_five_cases + constructor_one_hundred_forty_six_cases + constructor_one_hundred_forty_seven_cases + constructor_one_hundred_forty_eight_cases + constructor_one_hundred_fifty_cases + constructor_one_hundred_fifty_four_cases + constructor_one_hundred_fifty_six_cases + constructor_one_hundred_sixty_four_cases + constructor_one_hundred_sixty_eight_cases + constructor_one_hundred_seventy_eight_cases + constructor_one_hundred_eighty_five_cases + constructor_one_hundred_eighty_seven_cases + constructor_two_hundred_twenty_nine_cases + constructor_two_hundred_thirty_three_cases + constructor_two_hundred_sixty_seven_cases + constructor_two_hundred_sixty_eight_cases + constructor_two_hundred_eighty_four_cases + constructor_three_hundred_five_cases + constructor_three_hundred_twenty_one_cases + constructor_three_hundred_twenty_six_cases + constructor_three_hundred_thirty_six_cases + constructor_three_hundred_forty_cases + constructor_three_hundred_forty_five_cases + constructor_three_hundred_fifty_four_cases + constructor_three_hundred_eighty_eight_cases + constructor_four_hundred_cases + constructor_four_hundred_one_cases + constructor_four_hundred_sixteen_cases + constructor_four_hundred_fifty_four_cases + constructor_four_hundred_fifty_five_cases + constructor_four_hundred_fifty_six_cases + constructor_four_hundred_fifty_seven_cases + constructor_four_hundred_fifty_eight_cases + constructor_four_hundred_fifty_nine_cases + constructor_four_hundred_sixty_cases + constructor_four_hundred_sixty_five_cases + constructor_four_hundred_sixty_six_cases + constructor_four_hundred_seventy_one_cases + batched_constructor_cases} constructor original-x86 comparisons; all {len(code)} reachable instructions exercised.')
 
 if __name__ == '__main__':
     main()

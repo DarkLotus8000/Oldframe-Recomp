@@ -2,6 +2,8 @@
 #[path = "startup_lifted.rs"]
 mod translated;
 const COOKIE: u32 = 0x1310b30;
+// Reversible stand-in used only by the deterministic startup fixture.
+const STARTUP_FIXTURE_POINTER_XOR: u32 = 0xa5a55a5a;
 const INITIAL_STACK: u32 = 0x20000;
 const ENTROPY_XOR: u32 = 0x11223344 ^ 0x55667788 ^ 0x1234 ^ 0x5678 ^ 0x01020304 ^ 0x05060708;
 
@@ -185,16 +187,21 @@ impl Memory {
                 }
                 Ok(u32::from(self.tls_success))
             }
-            0x10a7284 | 0x10a7288 => Ok(self.read32(stack) ^ 0xa5a55a5a),
+            0x10a7284 | 0x10a7288 => Ok(self.read32(stack) ^ STARTUP_FIXTURE_POINTER_XOR),
             0xf26500 => Ok(1),
             0xf18111 => Ok(0),
             0x10a7308 => Ok(1),
             0x10a7160 => Ok(0),
             0x41d560 => {
-                if self.read32(stack) != 0x3f800000 || ecx != 0x131d5f0 {
+                let input = self.read32(stack);
+                let value = match (ecx, input) {
+                    (0x131d5f0, 0x3f800000) => 42,
+                    (0x1327590, 0x3f000000) => 21,
+                    _ => {
                     return Err(format!("unexpected duration initializer {ecx:#x}, {:#x}", self.read32(stack)));
-                }
-                self.write64(ecx, 42);
+                    }
+                };
+                self.write64(ecx, value);
                 self.write8(ecx + 8, 0);
                 Ok(ecx)
             }
@@ -215,9 +222,12 @@ impl Memory {
                 let descriptor = self.read32(stack);
                 let size = self.read32(stack + 4);
                 let count = self.read32(stack + 8);
-                if ![0x128f238, 0x129a4c8, 0x12a18a8].contains(&descriptor) || count != 1 || size == 0
+                if ![0x128f238, 0x129a4c8, 0x12a18a8, 0x1313c98, 0x12a79f0, 0x12cacec].contains(&descriptor) || count != 1 || size == 0
                     || (descriptor == 0x129a4c8 && size != 8)
                     || (descriptor == 0x12a18a8 && size != 0x30)
+                    || (descriptor == 0x1313c98 && size != 0x38)
+                    || (descriptor == 0x12a79f0 && size != 0x30)
+                    || (descriptor == 0x12cacec && size != 8)
                 {
                     return Err(format!("unexpected game allocation {descriptor:#x}, {size}, {count}"));
                 }
@@ -340,19 +350,21 @@ impl Memory {
                     return Err(format!("unexpected singleton vector insertion {ecx:#x}, {position:#x}, {count}, {source:#x}"));
                 }
                 let existing = if begin == 0 { 0 } else { end.wrapping_sub(begin) / 4 };
-                if existing > 1 {
-                    return Err(format!("unexpected singleton vector length {existing}"));
-                }
                 let ptr = self.heap_next;
-                let bytes = (existing + 1) * 4;
-                let allocation_end = ptr.checked_add(bytes).ok_or("singleton vector allocation overflow")?;
+                let length = existing + 1;
+                let capacity_items = if existing >= 2 {
+                    length.checked_mul(2).ok_or("vector capacity overflow")?
+                } else {
+                    length
+                };
+                let allocation_end = ptr.checked_add(capacity_items * 4).ok_or("vector allocation overflow")?;
                 if allocation_end > 0x100000 { return Err("guest heap arena exhausted during singleton insertion".into()); }
                 for index in 0..existing {
                     self.write32(ptr + index * 4, self.read32(begin + index * 4));
                 }
                 self.write32(ptr + existing * 4, self.read32(source));
                 self.write32(ecx, ptr);
-                self.write32(ecx + 4, allocation_end);
+                self.write32(ecx + 4, ptr + length * 4);
                 self.write32(ecx + 8, allocation_end);
                 self.heap_next = (allocation_end + 15) & !15;
                 Ok(0)
@@ -828,6 +840,22 @@ pub fn run_checkpoints() -> Result<(), String> {
     run_constructor_three_hundred_thirty_six_checkpoint()?;
     run_constructor_three_hundred_forty_checkpoint()?;
     run_constructor_three_hundred_forty_five_checkpoint()?;
+    run_constructor_three_hundred_fifty_four_checkpoint()?;
+    run_constructor_three_hundred_eighty_eight_checkpoint()?;
+    run_constructor_four_hundred_checkpoint()?;
+    run_constructor_four_hundred_one_checkpoint()?;
+    run_constructor_four_hundred_sixteen_checkpoint()?;
+    run_constructor_four_hundred_fifty_four_checkpoint()?;
+    run_constructor_four_hundred_fifty_five_checkpoint()?;
+    run_constructor_four_hundred_fifty_six_checkpoint()?;
+    run_constructor_four_hundred_fifty_seven_checkpoint()?;
+    run_constructor_four_hundred_fifty_eight_checkpoint()?;
+    run_constructor_four_hundred_fifty_nine_checkpoint()?;
+    run_constructor_four_hundred_sixty_checkpoint()?;
+    run_constructor_four_hundred_sixty_five_checkpoint()?;
+    run_constructor_four_hundred_sixty_six_checkpoint()?;
+    run_constructor_four_hundred_seventy_one_checkpoint()?;
+    run_constructor_batch_checkpoint(473, 0x106df20)?;
     run_allocator_checkpoints()?;
     run_locale_checkpoints()?;
     Ok(())
@@ -985,8 +1013,8 @@ fn run_atexit_checkpoints() -> Result<(), String> {
     let mut m = seh_memory(0, 0xffffffff);
     m.heap_result = 0x60000;
     translated::run(&mut m, 0xf207d4)?;
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let data = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_ATEXIT_READY stop=00f207d4 stack={:08x} frame={:08x} eax={:08x} begin={begin:08x} end={end:08x} encoded_begin={:08x} encoded_end={:08x} data={data} calls={}",
@@ -1012,8 +1040,8 @@ fn run_constructor_two_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067120)?;
     let object = m.bytes[0x1316334..0x1316341]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_002_READY stop=01067120 stack={:08x} frame={:08x} eax={:08x} object={object} callbacks={callbacks} calls={}",
@@ -1028,8 +1056,8 @@ fn run_constructor_three_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067150)?;
     let object = m.bytes[0x1316344..0x1316351]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_003_READY stop=01067150 stack={:08x} frame={:08x} eax={:08x} object={object} callbacks={callbacks} calls={}",
@@ -1044,8 +1072,8 @@ fn run_constructor_four_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067180)?;
     let object = m.bytes[0x1316358..0x13163dc]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_004_READY stop=01067180 stack={:08x} frame={:08x} eax={:08x} pool={:08x} object={object} callbacks={callbacks} calls={}",
@@ -1060,8 +1088,8 @@ fn run_constructor_eight_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067260)?;
     let objects = m.bytes[0x13163e0..0x13165d0]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_008_READY stop=01067260 stack={:08x} frame={:08x} eax={:08x} objects={objects} callbacks={callbacks} calls={}",
@@ -1088,8 +1116,8 @@ fn run_constructor_twelve_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x10672e0)?;
     let objects = m.bytes[0x1316618..0x1316924]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_012_READY stop=010672e0 stack={:08x} frame={:08x} eax={:08x} objects={objects} callbacks={callbacks} calls={}",
@@ -1113,8 +1141,8 @@ fn run_constructor_twenty_two_checkpoints() -> Result<(), String> {
         translated::run(&mut m, 0x1067420)?;
         let objects = m.bytes[0x1316924..0x1316b8c]
             .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-        let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-        let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+        let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+        let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
         let callbacks = m.bytes[begin as usize..end as usize]
             .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
         println!("STARTUP_CONSTRUCTOR_022_READY variant={variant} stop=01067420 stack={:08x} frame={:08x} eax={:08x} head={:08x} objects={objects} callbacks={callbacks} calls={}",
@@ -1128,8 +1156,8 @@ fn run_constructor_twenty_four_checkpoints() -> Result<(), String> {
     let mut m = seh_memory(0, 0xffffffff);
     m.heap_result = 0x60000;
     translated::run(&mut m, 0x1067440)?;
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_024_READY stop=01067440 stack={:08x} frame={:08x} eax={:08x} callbacks={callbacks} calls={}",
@@ -1144,8 +1172,8 @@ fn run_constructor_twenty_five_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067460)?;
     let object = m.bytes[0x1316bc0..0x1316d65]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_025_READY stop=01067460 stack={:08x} frame={:08x} eax={:08x} object={object} callbacks={callbacks} calls={}",
@@ -1160,8 +1188,8 @@ fn run_constructor_thirty_two_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x10674d0)?;
     let globals = m.bytes[0x1316d7c..0x1316d8c]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_032_READY stop=010674d0 stack={:08x} frame={:08x} eax={:08x} globals={globals} callbacks={callbacks} calls={}",
@@ -1186,8 +1214,8 @@ fn run_constructor_thirty_seven_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067560)?;
     let digest = m.bytes[0x131a024..0x131a07c]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_037_READY stop=01067560 stack={:08x} frame={:08x} eax={:08x} digest={digest} scalar={:08x} pool={:08x} interned={:08x} callbacks={callbacks} calls={}",
@@ -1205,8 +1233,8 @@ fn run_constructor_forty_one_checkpoints() -> Result<(), String> {
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     let scalars = m.bytes[0x128d594..0x128d59c]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_041_READY stop=01067630 stack={:08x} frame={:08x} eax={:08x} objects={objects} scalars={scalars} callbacks={callbacks} calls={}",
@@ -1219,8 +1247,8 @@ fn run_constructor_forty_three_checkpoints() -> Result<(), String> {
     let mut m = seh_memory(0, 0xffffffff);
     m.heap_result = 0x60000;
     translated::run(&mut m, 0x1067650)?;
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_043_READY stop=01067650 stack={:08x} frame={:08x} eax={:08x} counter={:08x} callbacks={callbacks} calls={}",
@@ -1235,8 +1263,8 @@ fn run_constructor_forty_four_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067670)?;
     let object = m.bytes[0x131ac80..0x131ac94]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_044_READY stop=01067670 stack={:08x} frame={:08x} eax={:08x} object={object} callbacks={callbacks} calls={}",
@@ -1270,8 +1298,8 @@ fn run_constructor_forty_six_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067710)?;
     let object = m.bytes[0x80000..0x8001c]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_046_READY stop=01067710 stack={:08x} frame={:08x} eax={:08x} pointer={:08x} object={object} callbacks={callbacks} calls={}",
@@ -1289,8 +1317,8 @@ fn run_constructor_forty_seven_checkpoints() -> Result<(), String> {
     let shared = m.read32(0x131ad88);
     let manager = m.bytes[shared as usize..m.heap_next as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_047_READY stop=01067780 stack={:08x} frame={:08x} eax={:08x} shared={:08x} next={:08x} object={object} manager={manager} callbacks={callbacks} calls={}",
@@ -1308,8 +1336,8 @@ fn run_constructor_forty_eight_checkpoints() -> Result<(), String> {
     let shared = m.read32(0x131ad88);
     let manager = m.bytes[shared as usize..m.heap_next as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_048_READY stop=01067810 stack={:08x} frame={:08x} eax={:08x} shared={shared:08x} next={:08x} object={object} manager={manager} callbacks={callbacks} calls={}",
@@ -1327,8 +1355,8 @@ fn run_constructor_forty_nine_checkpoints() -> Result<(), String> {
     let shared = m.read32(0x131ad88);
     let manager = m.bytes[shared as usize..m.heap_next as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_049_READY stop=01067880 stack={:08x} frame={:08x} eax={:08x} shared={shared:08x} next={:08x} object={object} manager={manager} callbacks={callbacks} calls={}",
@@ -1346,8 +1374,8 @@ fn run_constructor_fifty_checkpoints() -> Result<(), String> {
     let shared = m.read32(0x131ad88);
     let manager = m.bytes[shared as usize..m.heap_next as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_050_READY stop=01067910 stack={:08x} frame={:08x} eax={:08x} shared={shared:08x} next={:08x} object={object} manager={manager} callbacks={callbacks} calls={}",
@@ -1362,8 +1390,8 @@ fn run_constructor_fifty_one_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067930)?;
     let vector = m.bytes[0x128eb94..0x128eba0]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_051_READY stop=01067930 stack={:08x} frame={:08x} eax={:08x} next={:08x} vector={vector} callbacks={callbacks} calls={}",
@@ -1378,8 +1406,8 @@ fn run_constructor_fifty_two_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067950)?;
     let object = m.bytes[0x131aff8..0x131b194]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_052_READY stop=01067950 stack={:08x} frame={:08x} eax={:08x} object={object} callbacks={callbacks} calls={}",
@@ -1392,8 +1420,8 @@ fn run_constructor_fifty_three_checkpoints() -> Result<(), String> {
     let mut m = seh_memory(0, 0xffffffff);
     m.heap_result = 0x60000;
     translated::run(&mut m, 0x1067980)?;
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_053_READY stop=01067980 stack={:08x} frame={:08x} eax={:08x} module={:08x} function={:08x} callbacks={callbacks} calls={}",
@@ -1406,8 +1434,8 @@ fn run_constructor_fifty_five_checkpoints() -> Result<(), String> {
     let mut m = seh_memory(0, 0xffffffff);
     m.heap_result = 0x60000;
     translated::run(&mut m, 0x10679a0)?;
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_055_READY stop=010679a0 stack={:08x} frame={:08x} eax={:08x} callbacks={callbacks} calls={}",
@@ -1420,8 +1448,8 @@ fn run_constructor_fifty_six_checkpoints() -> Result<(), String> {
     let mut m = seh_memory(0, 0xffffffff);
     m.heap_result = 0x60000;
     translated::run(&mut m, 0x10679c0)?;
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_056_READY stop=010679c0 stack={:08x} frame={:08x} eax={:08x} object={:08x} counter={:08x} callbacks={callbacks} calls={}",
@@ -1443,8 +1471,8 @@ fn run_constructor_fifty_seven_checkpoints() -> Result<(), String> {
         translated::run(&mut m, 0x1067a10)?;
         let singleton = m.bytes[0x131b1e0..0x131b230]
             .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-        let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-        let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+        let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+        let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
         let callbacks = m.bytes[begin as usize..end as usize]
             .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
         println!("STARTUP_CONSTRUCTOR_057_READY variant={variant} stop=01067a10 stack={:08x} frame={:08x} eax={:08x} next={:08x} item={:08x} singleton={singleton} callbacks={callbacks} calls={}",
@@ -1505,8 +1533,8 @@ fn run_constructor_sixty_one_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067ad0)?;
     let object = m.bytes[0x131b24c..0x131b25c]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_061_READY stop=01067ad0 stack={:08x} frame={:08x} eax={:08x} object={object} callbacks={callbacks} calls={}",
@@ -1521,8 +1549,8 @@ fn run_constructor_sixty_two_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067b00)?;
     let object = m.bytes[0x131b25c..0x131b26c]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_062_READY stop=01067b00 stack={:08x} frame={:08x} eax={:08x} object={object} callbacks={callbacks} calls={}",
@@ -1537,8 +1565,8 @@ fn run_constructor_sixty_five_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067ba0)?;
     let objects = m.bytes[0x131b26c..0x131b350]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_065_READY stop=01067ba0 stack={:08x} frame={:08x} eax={:08x} objects={objects} callbacks={callbacks} calls={}",
@@ -1553,8 +1581,8 @@ fn run_constructor_seventy_three_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067e00)?;
     let objects = m.bytes[0x131b358..0x131b808]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_073_READY stop=01067e00 stack={:08x} frame={:08x} eax={:08x} objects={objects} callbacks={callbacks} calls={}",
@@ -1569,8 +1597,8 @@ fn run_constructor_seventy_four_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1067e20)?;
     let object = m.bytes[0x131b808..0x131b878]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_074_READY stop=01067e20 stack={:08x} frame={:08x} eax={:08x} count_a={:08x} count_b={:08x} object={object} callbacks={callbacks} calls={}",
@@ -1588,8 +1616,8 @@ fn run_constructor_eighty_seven_checkpoints() -> Result<(), String> {
     let string_ptr = m.read32(0x131ba9c);
     let string = m.bytes[string_ptr as usize..string_ptr as usize + 24]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_087_READY stop=01068060 stack={:08x} frame={:08x} eax={:08x} next={:08x} counter={:08x} state={state} string={string} callbacks={callbacks} calls={}",
@@ -1604,8 +1632,8 @@ fn run_constructor_ninety_one_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x10681a0)?;
     let state = m.bytes[0x131be38..0x131c198]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_091_READY stop=010681a0 stack={:08x} frame={:08x} eax={:08x} state={state} callbacks={callbacks} calls={}",
@@ -1623,8 +1651,8 @@ fn run_constructor_ninety_two_checkpoints() -> Result<(), String> {
     let first = m.read32(0x131c2ac);
     let second = m.read32(0x131c2c4);
     let items = format!("{:02x}{:02x}", m.read8(first), m.read8(second));
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_092_READY stop=010681c0 stack={:08x} frame={:08x} eax={:08x} next={:08x} counter={:08x} object={object} items={items} callbacks={callbacks} calls={}",
@@ -1643,8 +1671,8 @@ fn run_constructor_one_hundred_two_checkpoints() -> Result<(), String> {
     let string_len = m.read32(0x131c4ac);
     let string = m.bytes[string_ptr as usize..string_ptr as usize + string_len as usize + 1]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_102_READY stop=010682c0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} string={string} callbacks={callbacks} calls={}",
@@ -1664,8 +1692,8 @@ fn run_constructor_one_hundred_ten_checkpoints() -> Result<(), String> {
     let object_ptr = m.read32(0x131c524);
     let object = m.bytes[object_ptr as usize..object_ptr as usize + 24]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_110_READY stop=01068420 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} globals={globals} object={object} callbacks={callbacks} calls={}",
@@ -1684,8 +1712,8 @@ fn run_constructor_one_hundred_eleven_checkpoints() -> Result<(), String> {
     let string_len = m.read32(0x131c568);
     let string = m.bytes[string_ptr as usize..string_ptr as usize + string_len as usize + 1]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_111_READY stop=010684d0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} string={string} callbacks={callbacks} calls={}",
@@ -1700,8 +1728,8 @@ fn run_constructor_one_hundred_sixteen_checkpoints() -> Result<(), String> {
     translated::run(&mut m, 0x1068620)?;
     let state = m.bytes[0x131c7c8..0x131ca94]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_116_READY stop=01068620 stack={:08x} frame={:08x} eax={:08x} state={state} callbacks={callbacks} calls={}",
@@ -1731,8 +1759,8 @@ fn run_constructor_one_hundred_twenty_eight_checkpoints() -> Result<(), String> 
     translated::run(&mut m, 0x1068900)?;
     let state = m.bytes[0x131cad0..0x131cfd8]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_128_READY stop=01068900 stack={:08x} frame={:08x} eax={:08x} state={state} callbacks={callbacks} calls={}",
@@ -1751,8 +1779,8 @@ fn run_constructor_one_hundred_twenty_nine_checkpoints() -> Result<(), String> {
     let string_len = m.read32(0x131cfe4);
     let string = m.bytes[string_ptr as usize..string_ptr as usize + string_len as usize + 1]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_129_READY stop=010689a0 stack={:08x} frame={:08x} eax={:08x} next={:08x} object={object} string={string} callbacks={callbacks} calls={}",
@@ -1771,8 +1799,8 @@ fn run_constructor_one_hundred_thirty_checkpoints() -> Result<(), String> {
     let string_len = m.read32(0x131d008);
     let string = m.bytes[string_ptr as usize..string_ptr as usize + string_len as usize + 1]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_130_READY stop=01068a40 stack={:08x} frame={:08x} eax={:08x} next={:08x} object={object} string={string} callbacks={callbacks} calls={}",
@@ -1792,8 +1820,8 @@ fn run_constructor_one_hundred_thirty_one_checkpoints() -> Result<(), String> {
         let callback_ptr = m.read32(0x131d044);
         let callback = m.bytes[callback_ptr as usize..callback_ptr as usize + 8]
             .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-        let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-        let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+        let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+        let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
         let callbacks = m.bytes[begin as usize..end as usize]
             .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
         println!("STARTUP_CONSTRUCTOR_131_READY variant={variant} stop=01068b10 stack={:08x} frame={:08x} eax={:08x} next={:08x} object={object} callback={callback} callbacks={callbacks} calls={}",
@@ -1811,8 +1839,8 @@ fn run_constructor_one_hundred_thirty_seven_checkpoints() -> Result<(), String> 
         translated::run(&mut m, 0x1068ef0)?;
         let state = m.bytes[0x131d048..0x131d230]
             .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-        let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-        let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+        let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+        let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
         let callbacks = m.bytes[begin as usize..end as usize]
             .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
         println!("STARTUP_CONSTRUCTOR_137_READY variant={variant} stop=01068ef0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} callbacks={callbacks} calls={}",
@@ -1830,8 +1858,8 @@ fn run_constructor_one_hundred_forty_three_checkpoints() -> Result<(), String> {
         translated::run(&mut m, 0x10691b0)?;
         let state = m.bytes[0x131d17c..0x131d5c8]
             .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-        let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-        let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+        let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+        let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
         let callbacks = m.bytes[begin as usize..end as usize]
             .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
         println!("STARTUP_CONSTRUCTOR_143_READY variant={variant} stop=010691b0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} callbacks={callbacks} calls={}",
@@ -1849,8 +1877,8 @@ fn run_constructor_one_hundred_forty_four_checkpoints() -> Result<(), String> {
         translated::run(&mut m, 0x1069280)?;
         let state = m.bytes[0x131d17c..0x131d5f0]
             .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-        let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-        let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+        let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+        let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
         let callbacks = m.bytes[begin as usize..end as usize]
             .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
         println!("STARTUP_CONSTRUCTOR_144_READY variant={variant} stop=01069280 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} callbacks={callbacks} calls={}",
@@ -1924,8 +1952,8 @@ fn run_constructor_one_hundred_fifty_checkpoints() -> Result<(), String> {
         translated::run(&mut m, 0x10694a0)?;
         let state = m.bytes[0x131d5f0..0x131d734]
             .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-        let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-        let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+        let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+        let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
         let callbacks = m.bytes[begin as usize..end as usize]
             .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
         println!("STARTUP_CONSTRUCTOR_150_READY variant={variant} stop=010694a0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} callbacks={callbacks} calls={}",
@@ -1942,8 +1970,8 @@ fn run_constructor_one_hundred_fifty_four_checkpoint() -> Result<(), String> {
     translated::run(&mut m, 0x10695e0)?;
     let state = m.bytes[0x131d738..0x131d998]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_154_READY stop=010695e0 stack={:08x} frame={:08x} eax={:08x} state={state} callbacks={callbacks} calls={}",
@@ -1961,8 +1989,8 @@ fn run_constructor_one_hundred_fifty_six_checkpoint() -> Result<(), String> {
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     let heap = m.bytes[0x80000..m.heap_next as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_156_READY stop=01069720 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
@@ -1978,8 +2006,8 @@ fn run_constructor_one_hundred_sixty_four_checkpoint() -> Result<(), String> {
     translated::run(&mut m, 0x10699a0)?;
     let state = m.bytes[0x131d9e8..0x131ded8]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_164_READY stop=010699a0 stack={:08x} frame={:08x} eax={:08x} state={state} callbacks={callbacks} calls={}",
@@ -1997,8 +2025,8 @@ fn run_constructor_one_hundred_sixty_eight_checkpoint() -> Result<(), String> {
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     let heap = m.bytes[0x80000..m.heap_next as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_168_READY stop=01069b30 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
@@ -2014,8 +2042,8 @@ fn run_constructor_one_hundred_seventy_eight_checkpoint() -> Result<(), String> 
     translated::run(&mut m, 0x1069dc0)?;
     let state = m.bytes[0x131e400..0x131e978]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_178_READY stop=01069dc0 stack={:08x} frame={:08x} eax={:08x} state={state} callbacks={callbacks} calls={}",
@@ -2033,8 +2061,8 @@ fn run_constructor_one_hundred_eighty_five_checkpoint() -> Result<(), String> {
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     let heap = m.bytes[0x80000..m.heap_next as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_185_READY stop=01069e80 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
@@ -2050,8 +2078,8 @@ fn run_constructor_one_hundred_eighty_seven_checkpoint() -> Result<(), String> {
     translated::run(&mut m, 0x1069f20)?;
     let state = m.bytes[0x131ed28..0x131ee50]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_187_READY stop=01069f20 stack={:08x} frame={:08x} eax={:08x} state={state} callbacks={callbacks} calls={}",
@@ -2067,8 +2095,8 @@ fn run_constructor_two_hundred_twenty_nine_checkpoint() -> Result<(), String> {
     translated::run(&mut m, 0x106a1c0)?;
     let state = m.bytes[0x131ed24..0x131eef4]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_229_READY stop=0106a1c0 stack={:08x} frame={:08x} eax={:08x} state={state} callbacks={callbacks} calls={}",
@@ -2084,8 +2112,8 @@ fn run_constructor_two_hundred_thirty_three_checkpoint() -> Result<(), String> {
     translated::run(&mut m, 0x106a210)?;
     let state = m.bytes[0x131ed24..0x131f09c]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_233_READY stop=0106a210 stack={:08x} frame={:08x} eax={:08x} state={state} callbacks={callbacks} calls={}",
@@ -2101,8 +2129,8 @@ fn run_constructor_two_hundred_sixty_seven_checkpoint() -> Result<(), String> {
     translated::run(&mut m, 0x106abb0)?;
     let state = m.bytes[0x131f0a0..0x13220b8]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_267_READY stop=0106abb0 stack={:08x} frame={:08x} eax={:08x} state={state} callbacks={callbacks} calls={}",
@@ -2122,8 +2150,8 @@ fn run_constructor_two_hundred_sixty_eight_checkpoint() -> Result<(), String> {
         .map(|value| format!("{value:08x}")).collect::<Vec<_>>().join(",");
     let heap = m.bytes[0x80000..m.heap_next as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_268_READY stop=0106abf0 stack={:08x} frame={:08x} eax={:08x} next={:08x} registry={registry} state={state} heap={heap} callbacks={callbacks} calls={}",
@@ -2146,8 +2174,8 @@ fn run_constructor_two_hundred_eighty_four_checkpoint() -> Result<(), String> {
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     let heap = m.bytes[0x80000..m.heap_next as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_284_READY stop=0106aff0 stack={:08x} frame={:08x} eax={:08x} next={:08x} registry_object={registry_object:08x} registry={registry} registry_data={registry_data} state={state} heap={heap} callbacks={callbacks} calls={}",
@@ -2165,8 +2193,8 @@ fn run_constructor_three_hundred_five_checkpoint() -> Result<(), String> {
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     let heap = m.bytes[0x80000..m.heap_next as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_305_READY stop=0106b550 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
@@ -2184,8 +2212,8 @@ fn run_constructor_three_hundred_twenty_one_checkpoint() -> Result<(), String> {
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     let heap = m.bytes[0x80000..m.heap_next as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_321_READY stop=0106b900 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
@@ -2201,8 +2229,8 @@ fn run_constructor_three_hundred_twenty_six_checkpoint() -> Result<(), String> {
     translated::run(&mut m, 0x106b9f0)?;
     let state = m.bytes[0x129ff7c..0x12a0020]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_326_READY stop=0106b9f0 stack={:08x} frame={:08x} eax={:08x} state={state} callbacks={callbacks} calls={}",
@@ -2220,8 +2248,8 @@ fn run_constructor_three_hundred_thirty_six_checkpoint() -> Result<(), String> {
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     let heap = m.bytes[0x80000..m.heap_next as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_336_READY stop=0106bcf0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
@@ -2239,8 +2267,8 @@ fn run_constructor_three_hundred_forty_checkpoint() -> Result<(), String> {
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     let heap = m.bytes[0x80000..m.heap_next as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_340_READY stop=0106bdb0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
@@ -2258,11 +2286,316 @@ fn run_constructor_three_hundred_forty_five_checkpoint() -> Result<(), String> {
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     let heap = m.bytes[0x80000..m.heap_next as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-    let begin = m.read32(0x1359da8) ^ 0xa5a55a5a;
-    let end = m.read32(0x1359da4) ^ 0xa5a55a5a;
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
     let callbacks = m.bytes[begin as usize..end as usize]
         .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
     println!("STARTUP_CONSTRUCTOR_345_READY stop=0106bee0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_three_hundred_fifty_four_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106c1b0)?;
+    let state = m.bytes[0x13242b0..0x1324a00]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_354_READY stop=0106c1b0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_three_hundred_eighty_eight_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106c9a0)?;
+    let state = m.bytes[0x1324ac0..0x1326000]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_388_READY stop=0106c9a0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_four_hundred_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106cce0)?;
+    let state = m.bytes[0x1326000..0x1327000]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_400_READY stop=0106cce0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_four_hundred_one_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106cd50)?;
+    let state = m.bytes[0x12a7794..0x12a77a4]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_401_READY stop=0106cd50 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_four_hundred_sixteen_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106cf50)?;
+    let state = m.bytes[0x128d970..0x128da00].iter()
+        .chain(m.bytes[0x1327000..0x1328000].iter())
+        .map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_416_READY stop=0106cf50 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_four_hundred_fifty_four_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106d860)?;
+    let state = m.bytes[0x1326080..0x1328000]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_454_READY stop=0106d860 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_four_hundred_fifty_five_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106d930)?;
+    let state = m.bytes[0x1328000..0x1329000]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_455_READY stop=0106d930 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_four_hundred_fifty_six_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106da00)?;
+    let state = m.bytes[0x1327000..0x1328000]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_456_READY stop=0106da00 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_four_hundred_fifty_seven_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106dad0)?;
+    let state = m.bytes[0x1327000..0x1328000]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_457_READY stop=0106dad0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_four_hundred_fifty_eight_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106daf0)?;
+    let state = m.bytes[0x1327000..0x1328000]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_458_READY stop=0106daf0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_four_hundred_fifty_nine_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106db40)?;
+    let state = m.bytes[0x1327000..0x1328000]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_459_READY stop=0106db40 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_four_hundred_sixty_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106db60)?;
+    let state = m.bytes[0x1327000..0x1328000]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_460_READY stop=0106db60 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_four_hundred_sixty_five_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106dcc0)?;
+    let state = m.bytes[0x1327000..0x1328000]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_465_READY stop=0106dcc0 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_four_hundred_sixty_six_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106dd60)?;
+    let state = m.bytes[0x1327000..0x1328000]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_466_READY stop=0106dd60 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_four_hundred_seventy_one_checkpoint() -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, 0x106de70)?;
+    let state = m.bytes[0x1327000..0x1328000]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_471_READY stop=0106de70 stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
+        m.stack, m.frame, m.eax, m.heap_next,
+        m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
+    Ok(())
+}
+
+fn run_constructor_batch_checkpoint(number: u32, stop: u32) -> Result<(), String> {
+    let mut m = seh_memory(0, 0xffffffff);
+    m.write32(0x1317f10, 1);
+    m.write32(0x1317f18, 42);
+    translated::run(&mut m, stop)?;
+    let state = m.bytes[0x1327000..0x1328000]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let heap = m.bytes[0x80000..m.heap_next as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let begin = m.read32(0x1359da8) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let end = m.read32(0x1359da4) ^ STARTUP_FIXTURE_POINTER_XOR;
+    let callbacks = m.bytes[begin as usize..end as usize]
+        .iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    println!("STARTUP_CONSTRUCTOR_{number:03}_READY stop={stop:08x} stack={:08x} frame={:08x} eax={:08x} next={:08x} state={state} heap={heap} callbacks={callbacks} calls={}",
         m.stack, m.frame, m.eax, m.heap_next,
         m.calls.iter().map(|slot| format!("{slot:08x}")).collect::<Vec<_>>().join(","));
     Ok(())

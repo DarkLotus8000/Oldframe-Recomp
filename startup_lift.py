@@ -48,6 +48,12 @@ STOPS = {0xF23011, 0xF23016, 0xF17C56, 0xF22EB4, 0xF17C67,
          0x479174, 0x47919F,
          0x4A5244, 0x4A527E,
          0x106BD43,
+         0x106CD3B,
+         0x106CD9A,
+         0x106D8C7, 0x106D8DC, 0x106D8FD,
+         0x106D997, 0x106D9AC, 0x106D9CD,
+         0x106DA67, 0x106DA7C, 0x106DA9D,
+         0x106DD09,
          0x1067529,
          0xF2D4F3, 0xF1A754, 0xF303A5, 0xF303E3, 0xF21D4B, 0xF22AC4,
          0xF21E59, 0xF21F70}
@@ -78,8 +84,9 @@ RANGES = ((ENTRY, ENTRY + 10), (0xF23039, 0xF230D4),
           (0x1067260, 0x106726A), (0x402B40, 0x402B79),
           (0x1067270, 0x10672B7), (0x10672C0, 0x10672CC),
           (0x10672D0, 0x10672DC),
-          (0x10672E0, 0x106BEE0), (0x4172E0, 0x41739C),
+          (0x10672E0, 0x106DF20), (0x4172E0, 0x41739C),
           (0x445C60, 0x445C6F), (0x451550, 0x4515EC),
+          (0x451D20, 0x451D70),
           (0x45B450, 0x45B4D1),
           (0x479120, 0x4791CC),
           (0x4BF4E0, 0x4BF5CA),
@@ -186,100 +193,33 @@ INDIRECT_TARGETS[0xF22FF0] = (0x50020, 0x10A72F0)
 INDIRECT_TARGETS[0xF207A7] = (0xF18111,)
 INDIRECT_TARGETS[0xF2077A] = (0xF179F2, 0xF182B1, 0xF192AB, 0xF231D7,
                               0xF25852, 0xF2615A, 0xF22323)
-INDIRECT_TARGETS[0xF207EB] = (0x10670D0, 0x10670F0, 0x1067120, 0x1067150,
-                              0x1067180, 0x10671D0, 0x1067200, 0x1067210,
-                              0x1067260, 0x1067270, 0x10672C0, 0x10672D0)
-INDIRECT_TARGETS[0xF207EB] += tuple(range(0x10672E0, 0x1067440, 0x20))
-INDIRECT_TARGETS[0xF207EB] += (0x1067430,)
-INDIRECT_TARGETS[0xF207EB] += (0x1067440,)
-INDIRECT_TARGETS[0xF207EB] += tuple(range(0x1067460, 0x10674D0, 0x10))
-INDIRECT_TARGETS[0xF207EB] += (0x10674D0,)
-INDIRECT_TARGETS[0xF207EB] += (0x10674F0, 0x1067500, 0x1067510, 0x1067520)
-INDIRECT_TARGETS[0xF207EB] += (0x1067560, 0x1067570, 0x1067580, 0x10675E0)
-INDIRECT_TARGETS[0xF207EB] += (0x1067630, 0x1067640)
-INDIRECT_TARGETS[0xF207EB] += (0x1067650, 0x1067670, 0x10676A0, 0x1067710, 0x1067780, 0x1067810, 0x1067880)
-INDIRECT_TARGETS[0xF207EB] += (0x1067910,)
-INDIRECT_TARGETS[0xF207EB] += (0x1067930,)
-INDIRECT_TARGETS[0xF207EB] += (0x1067950,)
-INDIRECT_TARGETS[0xF207EB] += (0x1067980, 0x1067990)
-INDIRECT_TARGETS[0xF207EB] += (0x10679A0,)
-INDIRECT_TARGETS[0xF207EB] += (0x10679C0,)
-INDIRECT_TARGETS[0xF207EB] += (0x1067A10, 0x1067A20)
-INDIRECT_TARGETS[0xF207EB] += (0x1067A50,)
-INDIRECT_TARGETS[0xF207EB] += (0x1067AA0, 0x1067AD0)
-INDIRECT_TARGETS[0xF207EB] += (0x1067B00, 0x1067B10, 0x1067B40, 0x1067B50)
-INDIRECT_TARGETS[0xF207EB] += (0x1067BA0, 0x1067BF0, 0x1067C40, 0x1067C90,
-                              0x1067CE0, 0x1067D30, 0x1067D80, 0x1067DD0)
-INDIRECT_TARGETS[0xF207EB] += (0x1067E00,)
-INDIRECT_TARGETS[0xF207EB] += (0x1067E20, 0x1067E50, 0x1067E70, 0x1067E80,
-                              0x1067ED0, 0x1067F20, 0x1067F30, 0x1067F40,
-                              0x1067F90, 0x1067FC0, 0x1067FF0, 0x1068020,
-                              0x1068040)
-INDIRECT_TARGETS[0xF207EB] += (0x1068060, 0x10680B0, 0x1068100, 0x1068150)
-INDIRECT_TARGETS[0xF207EB] += (0x10681A0,)
-INDIRECT_TARGETS[0xF207EB] += (0x10681C0, 0x10681F0, 0x1068220, 0x1068230,
-                              0x1068240, 0x1068250, 0x1068270, 0x1068280,
-                              0x10682A0, 0x10682B0)
-INDIRECT_TARGETS[0xF207EB] += (0x10682C0, 0x10682F0, 0x1068320, 0x1068340,
-                              0x1068360, 0x1068390, 0x1068400, 0x1068410)
-INDIRECT_TARGETS[0xF207EB] += (0x1068420,)
-INDIRECT_TARGETS[0xF207EB] += (0x10684D0, 0x10684E0, 0x1068530, 0x1068580,
-                              0x10685D0)
-INDIRECT_TARGETS[0xF207EB] += (0x1068620,)
-INDIRECT_TARGETS[0xF207EB] += (0x1068640, 0x1068650, 0x10686A0, 0x10686F0,
-                              0x1068740, 0x1068760, 0x10687B0, 0x1068800,
-                              0x1068810, 0x1068860, 0x10688B0)
-INDIRECT_TARGETS[0xF207EB] += (0x1068900,)
-INDIRECT_TARGETS[0xF207EB] += (0x10689A0,)
-INDIRECT_TARGETS[0xF207EB] += (0x1068A40,)
-INDIRECT_TARGETS[0xF207EB] += (0x1068B10, 0x1068BE0, 0x1068CB0, 0x1068D80,
-                              0x1068E50, 0x1068EA0)
-INDIRECT_TARGETS[0xF207EB] += (0x1068EF0, 0x1068F90, 0x1068FE0, 0x1069030,
-                              0x1069040, 0x10690E0)
-INDIRECT_TARGETS[0xF207EB] += (0x10691B0,)
-INDIRECT_TARGETS[0xF207EB] += (0x1069280,)
-INDIRECT_TARGETS[0xF207EB] += (0x10692A0,)
-INDIRECT_TARGETS[0xF207EB] += (0x10692C0,)
-INDIRECT_TARGETS[0xF207EB] += (0x10692E0,)
-INDIRECT_TARGETS[0xF207EB] += (0x1069300, 0x10693D0)
-INDIRECT_TARGETS[0xF207EB] += (0x10694A0, 0x10694F0, 0x1069540, 0x1069590)
-INDIRECT_TARGETS[0xF207EB] += (0x10695E0, 0x1069680)
-INDIRECT_TARGETS[0xF207EB] += (0x1069720, 0x1069770, 0x10697C0, 0x1069810,
-                              0x1069860, 0x10698B0, 0x1069900, 0x1069950)
-INDIRECT_TARGETS[0xF207EB] += (0x10699A0, 0x10699F0, 0x1069A40, 0x1069AE0)
-INDIRECT_TARGETS[0xF207EB] += (0x1069B30, 0x1069B80, 0x1069BD0, 0x1069C20,
-                              0x1069C70, 0x1069CC0, 0x1069D10,
-                              0x1069D60, 0x1069D70, 0x1069D80)
-INDIRECT_TARGETS[0xF207EB] += (0x1069DC0, 0x1069DF0, 0x1069E10, 0x1069E30,
-                              0x1069E40, 0x1069E50, 0x1069E60)
-INDIRECT_TARGETS[0xF207EB] += (0x1069E80, 0x1069ED0)
-INDIRECT_TARGETS[0xF207EB] += tuple(range(0x1069F20, 0x106A1C0, 0x10))
-INDIRECT_TARGETS[0xF207EB] += (0x106A1C0, 0x106A1D0, 0x106A1E0, 0x106A1F0)
-INDIRECT_TARGETS[0xF207EB] += (0x106A210, 0x106A260, 0x106A2B0, 0x106A2C0)
-INDIRECT_TARGETS[0xF207EB] += tuple(range(0x106A310, 0x106AAE0, 0x50))
-INDIRECT_TARGETS[0xF207EB] += (0x106AAE0, 0x106AB10, 0x106AB20, 0x106AB30, 0x106AB60)
-INDIRECT_TARGETS[0xF207EB] += (0x106ABB0,)
-INDIRECT_TARGETS[0xF207EB] += tuple(range(0x106ABF0, 0x106AFF0, 0x40))
-INDIRECT_TARGETS[0xF207EB] += (0x106AFF0, 0x106B020, 0x106B050, 0x106B080,
-                              0x106B0B0, 0x106B100, 0x106B120, 0x106B170,
-                              0x106B1C0, 0x106B210, 0x106B260, 0x106B2B0,
-                              0x106B300, 0x106B350, 0x106B370, 0x106B3C0,
-                              0x106B3F0, 0x106B440, 0x106B490, 0x106B4B0,
-                              0x106B500)
-INDIRECT_TARGETS[0xF207EB] += (0x106B550, 0x106B570, 0x106B5A0, 0x106B5F0,
-                              0x106B620, 0x106B670, 0x106B6A0, 0x106B6D0,
-                              0x106B720, 0x106B740, 0x106B790, 0x106B7E0,
-                              0x106B810, 0x106B840, 0x106B890, 0x106B8E0)
-INDIRECT_TARGETS[0xF207EB] += (0x106B900, 0x106B930, 0x106B960, 0x106B990,
-                              0x106B9C0)
-INDIRECT_TARGETS[0xF207EB] += (0x106B9F0, 0x106BA40, 0x106BA90, 0x106BAE0,
-                              0x106BB30, 0x106BB80, 0x106BBD0, 0x106BC20,
-                              0x106BC50, 0x106BCA0)
-INDIRECT_TARGETS[0xF207EB] += (0x106BCF0, 0x106BD60, 0x106BD70, 0x106BD90)
-INDIRECT_TARGETS[0xF207EB] += (0x106BDB0, 0x106BDE0, 0x106BE10, 0x106BE40,
-                              0x106BE90)
+CONSTRUCTOR_TABLE = (0x10A761C, 0x10A99EC)
 INDIRECT_TARGETS[0x4A5274] = (0x421860,)
 DIGEST = '614c08f25b531d590c5aa6d9cf35b1e406e83d35fbd50e61188f19247fb176ae'
+
+def constructor_targets(image, ranges):
+    """Read non-null CRT constructor pointers that fall inside bounded lift scope."""
+    base, sections = lift.pe_sections(image)
+    targets = []
+    for slot in range(*CONSTRUCTOR_TABLE, 4):
+        rva = slot - base
+        section = next((item for item in sections
+                        if item[0] <= rva < item[0] + item[1]), None)
+        if section is None:
+            raise ValueError(f'unmapped constructor slot {slot:#x}')
+        section_rva, _, section_offset = section
+        offset = section_offset + rva - section_rva
+        target = unpack_from('<I', image, offset)[0]
+        if target and any(lo <= target < hi for lo, hi in ranges):
+            targets.append(target)
+    return tuple(dict.fromkeys(targets))
+
+
+def startup_indirect_targets(image, ranges):
+    targets = dict(INDIRECT_TARGETS)
+    targets[0xF207EB] = constructor_targets(image, ranges)
+    return targets
+
 
 
 def translate(insn):
@@ -316,8 +256,10 @@ def translate(insn):
     return lift.translate(insn)
 
 
-def discover(image, entry, ranges, stops, imports, limit=8192):
+def discover(image, entry, ranges, stops, imports, limit=16384, indirect_targets=None):
     base, sections = lift.pe_sections(image)
+    if indirect_targets is None:
+        indirect_targets = INDIRECT_TARGETS
     decoder = lift.Cs(lift.CS_ARCH_X86, lift.CS_MODE_32)
     decoder.detail = True
     pending, decoded, occupied = [entry], {}, {}
@@ -359,8 +301,8 @@ def discover(image, entry, ranges, stops, imports, limit=8192):
                 pass
             elif op == 'call' and arg.type == lift.X86_OP_REG and pc in INDIRECT_IMPORTS:
                 pass
-            elif op == 'call' and pc in INDIRECT_TARGETS:
-                pending.extend(target for target in INDIRECT_TARGETS[pc] if target not in imports)
+            elif op == 'call' and pc in indirect_targets:
+                pending.extend(target for target in indirect_targets[pc] if target not in imports)
             else:
                 raise ValueError(f'unresolved {op} at {pc:#x}: {insn.op_str}')
             if op != 'jmp':
@@ -379,7 +321,8 @@ def generate_startup(image):
     base, _ = lift.pe_sections(image)
     if base + unpack_from('<I', image, pe+40)[0] != ENTRY:
         raise ValueError('unexpected PE entry point')
-    code = discover(image, ENTRY, RANGES, STOPS, IMPORTS)
+    indirect_targets = startup_indirect_targets(image, RANGES)
+    code = discover(image, ENTRY, RANGES, STOPS, IMPORTS, indirect_targets=indirect_targets)
     used = {'esp'}
     for insn in code.values():
         reads, writes = insn.regs_access()
@@ -392,7 +335,7 @@ def generate_startup(image):
              'pub(super) fn run_from(m: &mut Memory, start: u32, stop: u32) -> Result<(), String> {',
              'let mut r = Registers { esp: 0x20000, ..Default::default() };',
              'let mut pc = start;',
-             'for _ in 0..131072 {',
+             'for _ in 0..262144 {',
              'if pc == stop { m.stack = r.esp; m.frame = r.ebp; m.eax = r.eax; return Ok(()); }',
              'match pc {']
     for pc, insn in sorted(code.items()):
@@ -414,10 +357,10 @@ def generate_startup(image):
                               f'r.esp += {cleanup*4};', f'pc = {following:#x};']
                 else:
                     lines += ['r.esp -= 4;', f'm.write32(r.esp, {following:#x});', f'pc = {target:#x};']
-            elif pc in INDIRECT_TARGETS:
+            elif pc in indirect_targets:
                 lines += [f'let target = {lift.value(insn, args[0])};', 'r.esp -= 4;',
                           f'm.write32(r.esp, {following:#x});', 'match target {']
-                for target in INDIRECT_TARGETS[pc]:
+                for target in indirect_targets[pc]:
                     if target in IMPORTS:
                         argc = IMPORTS[target][1]
                         cleanup = 1 if target in CDECL_IMPORTS else argc + 1

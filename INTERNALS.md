@@ -411,9 +411,12 @@ getter. It then calls the group rooted at `00F20730`, including seven newly
 reachable small routines, to initialize encoded null/callback globals before
 encoding the four TLS/FLS dispatch pointers.
 
-The EncodePointer fixture (`010A7284`) uses XOR `A5A55A5A`; this represents an
-opaque reversible encoding for comparisons, not a claim about Windows'
-private encoding algorithm. The selected callback at `00F2E465` is encoded
+The EncodePointer fixture (`010A7284`) uses the named
+`STARTUP_FIXTURE_POINTER_XOR` value `A5A55A5A`; this represents an opaque
+reversible encoding for comparisons, not a claim about Windows' private
+encoding algorithm. It is confined to `--startup`'s deterministic `Memory`
+host and the Unicorn verifier. A native boot path must call the real Win32
+EncodePointer/DecodePointer imports. The selected callback at `00F2E465` is encoded
 but not invoked. TLS fixtures retain the stored value and validate the index.
 Four additional original-x86 cases cover FLS and TLS success, TlsAlloc failure,
 and TlsSetValue failure; failures stop at `00F23016` before cleanup. All 30
@@ -771,7 +774,7 @@ first genuinely new constructor shape. The later `__wincmdln`, WinMain, title
 screen, and UI-input checks remain outstanding. SpaceNinjaServer remained
 stopped.
 
-## Constructors 4 through 340 verified (2026-11-21)
+## Constructors 4 through 466 verified (2026-11-21)
 
 The bounded constructor-table lift now reaches entry `0106B550`, after the
 first 305 constructors have returned. Constructor 4 executes the original
@@ -1167,6 +1170,97 @@ calls (summary Evidence
 full Evidence
 `ev_ea39552f95d77b1669f85761186279f7fe054ce678c6530ea8225d58b30f5568`).
 
+Constructor 341 now uses a narrow host implementation of `00415E10` that
+concatenates the two verified small-string objects while preserving the
+original inline/heap representation. Constructors 342 through 345 then reuse
+translated `00425060` and `00421AE0`. The composed string, object state, heap,
+callbacks, registers, stack, and ordered calls match at `0106BEE0`.
+
+Constructor 346 allocates and initializes a 56-byte self-linked object using
+descriptor `01313C98`. Constructors 347 through 354 add eight more translated
+`00425060` objects. Their state, allocation bytes, callbacks, registers, stack,
+and calls match the original x86 at `0106C1B0`. Constructor 355 returns to the
+same `00425060` family.
+
+Constructors 355 through 388 form a 34-entry run of the established
+`00425060` and `00421AE0` object shapes, with two callback-only constructors.
+Their state, heap, callbacks, registers, stack, and calls match at `0106C9A0`.
+Constructors 389 through 400 add eleven more `00425060` objects and one cleanup
+callback; the accumulated state matches at `0106CCE0`.
+
+Constructor 401 allocates another 48-byte self-linked object with descriptor
+`012A79F0`, initializes its two flags and scalar field, and registers cleanup
+callback `01095380`. Its global pointer, heap bytes, callbacks, registers,
+stack, and calls match at `0106CD50`. The terminal allocation-failure edge is
+bounded at `0106CD3B`. Constructor 402 begins at `0106CD50` with a scalar
+increment and cleanup registration.
+
+Constructors 402 through 416 cover a scalar increment, a fixed small-string
+copy whose inline representation makes the heap-free arm untaken, another
+`00425060` object, a translated `004A5160` registry insertion, three
+`004BF4E0` wrappers, fixed scalar initializers, and four cleanup callbacks.
+Low scalar state, the later object region, heap, callbacks, registers, stack,
+and calls match at `0106CF50`. The general heap-string cleanup arm is retained
+as the explicit unexercised boundary `0106CD9A`.
+
+Constructors 417 through 454 add 38 more instances of the established
+`00425060`, `00421AE0`, `00423B10`, and `004A5160` shapes. Their full object
+region, heap, callback table, registers, stack, and ordered calls match at
+`0106D860`. Reaching this larger slice required raising both deterministic
+execution budgets from 131,072 to 262,144 instructions; translated and
+original-x86 runs use the same bound.
+
+Constructor 455 builds another translated event object through two small
+strings and `004A1A30`, then allocates its eight-byte callback record with the
+new descriptor `012CACEC`. State, heap, callbacks, registers, stack, and calls
+match at `0106D930`. Its fixed inputs leave the null-allocation arm and two
+heap-string cleanup arms untaken; their explicit boundaries are `0106D8C7`,
+`0106D8DC`, and `0106D8FD`.
+
+Constructor 456 repeats the event-object shape with different original string
+constants, inserts through translated `004A1A30`, allocates descriptor
+`012CACEC`, stores the callback object at `01327488`, and registers its exit
+callback. The `01327000..01328000` state page, heap, callbacks, registers,
+stack, and calls match at `0106DA00`. Fixed inline-string inputs leave the
+null-allocation arm and two heap-string cleanup guards untaken; their explicit
+boundaries are `0106D997`, `0106D9AC`, and `0106D9CD`. Focused Ghidra
+instruction evidence for the 206-byte procedure is Evidence
+`ev_14c74858e113c99cdb6811d3073da2706071fb63d67f73f96280c0d3ab6fafed`.
+
+Constructor 457 repeats that shape for registry `0132748C` and callback object
+`013274B0`; the state page, heap, callbacks, registers, stack, and calls match
+at `0106DAD0`. Its fixed-input boundaries are `0106DA67`, `0106DA7C`, and
+`0106DA9D` (Ghidra instruction Evidence
+`ev_ccc98c06d9fe6187015a15c62c47b4dcaf43e2b17930441151492c2a0c5d91f8`).
+Constructor 458 performs translated scalar SSE initialization: it multiplies
+the original floats at `012AF834` and `010A9CC8` and stores the exact result at
+`013274F0`; state matches original x86 at `0106DAF0` (focused instruction
+Evidence `ev_90d5bea0d0d6d4853012c7c1e25a6e90966edc142a255f388a0ac4a345ba5545`).
+Constructor 459 initializes the `013274F8` object through translated
+`00425060`, clears its trailing scalar state, and registers its callback. The
+full state and call sequence match at `0106DB40` (entry Evidence
+`ev_78ae88bdeaebfe471a267efe5451a2e16bd57fb34f3b051e0866ce13d95599e1`).
+
+Constructor 460 loads the original `0.5` float and calls the established
+`0041D560` duration boundary for object `01327590`. Rust accepts only the two
+observed object/input pairs; with deterministic timer value 42 it stores the
+64-bit value 21 and a clear flag, matching the original helper and x87
+conversion at `0106DB60`. Focused entry Evidence is
+`ev_6609489b49bf754f732b863529520402abbae8a639317ddd452f43f0169fe7ce`;
+the helper pseudocode is Evidence
+`ev_1f97e329ac20bc3f87cbbdf752e14f4f9681b2baab591c6a509b8aacb2266496`.
+Constructors 461 through 465 add three established `00425060` object shapes,
+one scalar SSE multiply/store at `01327788`, and a fourth object shape. Their
+state page, heap, callbacks, registers, stack, and ordered calls match at
+`0106DCC0`.
+Constructor 466 builds two strings and inserts them through translated
+`004A1A30` into registry `0132778C`. Its first inline string skips cleanup at
+the explicit `0106DD09` boundary; the second string takes the translated
+`004137D0` free path. Persistent state, heap, callbacks, registers, stack, and
+ordered calls match at `0106DD60`. Ghidra reports 44 instructions, seven basic
+blocks, five resolved callees, and no unresolved calls (summary Evidence
+`ev_3e2b0fa5208c4e0d7f65eea16f1834450de7fcc2dde61ac8cd876f2851a54eb1`).
+
 Focused Ghidra evidence retained for this work includes `00424B60` (Evidence
 `ev_56106a5df8af48ef0d52b4b197e478076cd5cd0ec984a7b5c921f89cd9934c9d`),
 `00423B70` (Evidence
@@ -1337,17 +1431,17 @@ constructor helper `00C60FE0` has 77 instructions, 13 basic blocks, four
 resolved callees, and no unresolved calls (Evidence
 `ev_75ccdf1e0cae77e36e3f297bef6288fda908cc82d46f2beb2a754c0129eff8b6`).
 
-`verify-startup.cmd "D:\Warframe 2012"` passes 150 original-x86 comparisons,
-including 83 constructor comparisons, and exercises all 6,329 reachable
+`verify-startup.cmd "D:\Warframe 2012"` passes 165 original-x86 comparisons,
+including 98 constructor comparisons, and exercises all 7,879 reachable
 instructions in the bounded group. All 20 Rust tests and five Python tests
 pass. Cache verification remains 44 framed entries, 12 unframed entries, one
 stored frame, and 192 compressed blocks across 25 archives. The headless asset
 check still loads the 43,708-byte SigninReward texture with a 256 x 32 top mip
 and three compressed frames.
 
-Last verified checkpoint: entry of constructor `0106BDB0`, after the first 340
-constructors have returned. Next: translate constructor 341's exercised
-`00415E10` string-composition path.
+Last verified checkpoint: entry of constructor `0106DD60`, after the first 466
+constructors have returned. Next: analyze constructor 467 beginning at
+`0106DD60` and continue toward WinMain.
 The alternate positive-duration
 path in `0041D1F0` remains recorded at `0041D209`. Continue through
 the constructor table, `__wincmdln` at `00F22689`, and WinMain at `00401140`.
