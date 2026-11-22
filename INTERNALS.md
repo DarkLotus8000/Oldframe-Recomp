@@ -1431,17 +1431,96 @@ constructor helper `00C60FE0` has 77 instructions, 13 basic blocks, four
 resolved callees, and no unresolved calls (Evidence
 `ev_75ccdf1e0cae77e36e3f297bef6288fda908cc82d46f2beb2a754c0129eff8b6`).
 
-`verify-startup.cmd "D:\Warframe 2012"` passes 165 original-x86 comparisons,
-including 98 constructor comparisons, and exercises all 7,879 reachable
+The CRT constructor table is read directly from the verified PE at
+`010A761C..010A99EC`. `startup_lift.py` now derives the bounded indirect-call
+target set from non-null table entries that fall within the current lift ranges,
+instead of maintaining a second hand-written target list. The generic batch
+checkpoint runner and verifier are used for new grouped checkpoints; historical
+named cases remain in place while they are simplified incrementally.
+
+Constructors 472 and 473 call translated helper `00451D20..00451D6F`, which
+initializes a registration record and appends it to the manager vector. Focused
+Ghidra instruction evidence is
+`ev_911ca2e4e1e282a85afbb5510b71a478b543a35f3cc1f01f237075af49a2e942`.
+The deterministic vector host retains exact growth for the earlier one- and
+two-element fixtures, then provides geometric spare capacity once the vector
+has at least two entries. This makes the constructor run cover both the host
+growth boundary and the helper's translated in-capacity append branch. Rust and
+Unicorn use the same rule, and the final memory, heap, callbacks, calls, and
+registers match at `0106DF20`. Constructors 474–476 then initialize three more fixed-layout objects through existing translated helpers. Constructors 477–478 execute the translated event-wrapper path; their untaken heap-free alternatives remain explicit boundaries at `0106E059` and `0106E0F9`. Constructor 479 executes the same wrapper, allocates its eight-byte callback record, and takes the translated long-string free path. Its allocation-failure target `0106E1B7` and unused first-string free alternative `0106E1CC` remain explicit boundaries. Focused Ghidra reports 56 instructions, ten basic blocks, six resolved callees, and no unresolved calls (summary parent Evidence `ev_64984a874b3fa74e2ffcad0b9c51947ecba62c4d864043f7c1806b53fae0b957`). The grouped state matches the original at `0106E220`. Constructor 480 repeats the event/callback pattern and matches at `0106E2F0`; focused Ghidra reports 56 instructions, ten basic blocks, six resolved callees, and no unresolved calls (summary parent Evidence `ev_1c6565ea3a6a9c03405c11702cebee043e6a95a3573fe522e953e11cbee19747`). Constructors 481–483 are fixed-layout initializers using existing translated helpers and match as one generic batch at `0106E3E0`. Constructors 484–487 are four repeated event/callback initializers. Each successful allocation and long-string cleanup executes translated code; allocation-failure and unused short-string cleanup alternatives remain explicit boundaries. Their combined state matches at `0106E720`. Focused Ghidra reports 56 instructions, ten basic blocks, six resolved callees, and no unresolved calls for constructor 484 (summary parent Evidence `ev_3e4b945921aea0ef3046d2d251dc6c5128954e1e4d26383cb2e531bf8e99c574`). Constructors 488–491 add two callback-backed and two callback-free event objects and match at `0106EA00`; only their allocation-failure and unused cleanup alternatives remain bounded. Constructors 492–494 then execute an existing object initializer, the translated floating-point scale calculation, and a leaf object/string initializer, matching together at `0106EA60`. Constructors 495–500 are six repeated event initializers. All required long-string cleanup paths execute translated code; five untaken short-string cleanup alternatives remain explicit boundaries. The batch matches at `0106EE20`. Ghidra does not define a procedure entry at `0106EA60`, so this milestone relies on direct PE decoding plus original-x86 Unicorn execution rather than claiming unavailable static function evidence.
+
+Constructors 501–506 are six more callback-backed event initializers. Each
+successful callback allocation and required long-string cleanup executes
+translated game code. Their allocation-failure branches and four untaken
+short-string cleanup alternatives are explicit bounded stops. The generic
+batch runner compares the complete guest-state snapshot, heap, callback list,
+call trace, and registers with original x86 at `0106F300`.
+
+Constructors 507–512 repeat the callback-backed event shape and match as one
+generic batch at `0106F7E0`. Required long-string cleanup executes translated
+code; the six allocation-failure entries and five untaken short-string cleanup
+entries remain explicit boundaries. Focused headless Ghidra analysis reports
+56 instructions, ten basic blocks, six resolved callees, and no unresolved
+calls for constructor 507 (summary parent Evidence
+`ev_608bc5432f49c880fe1b77830cfd89a77b9020f34cd0ea2efcf51c077916d254`).
+
+Constructors 513–526 combine nine fixed-layout initializers with five event
+initializers, three of which allocate callback records. The whole sequence runs
+as one generic batch to `0106FE20`. Required cleanup paths execute translated
+code; three allocation-failure entries and five untaken short-string cleanup
+entries are explicit bounded stops. The complete guest state, heap, callback
+ordering, call trace, and registers match original x86.
+
+Constructors 527–555 cover three callback-backed event constructors, fixed
+object initializers, fifteen leaf name-interning constructors, and a copied
+small-string initializer. They execute together to `010703F0`; required cleanup
+executes translated code and six untaken cleanup alternatives remain bounded.
+
+Constructor 556 allocates and initializes a 44-byte self-linked object, then
+constructors 557–585 run the existing fixed-layout initializer family. Descriptor
+`012CACEC` is now validated for its observed 8-byte callback records and this
+44-byte object in both Rust and Unicorn. Its allocation-failure branch at
+`01070443` calls reporter `004259A0`, so it remains an explicit boundary while
+the successful path runs translated code. Focused Ghidra reports 18 instructions,
+three basic blocks, and a terminal `__invoke_watson` call for that reporter
+(summary parent Evidence
+`ev_90af6d6dd1f9374798b087d0d3da873f79b24d0811a28ff1f6fa73637e2926fd`;
+instruction Evidence
+`ev_b717adc78af7edd5d42c9bb4bde3f3482aec35c2795b34e227915857a03509fd`).
+The complete batch matches original x86 at `01070D70`.
+
+Constructors 586–625 extend the same continuous run through 31 fixed-layout
+initializers and nine event initializers. Two callback allocation-failure entries
+and eleven untaken cleanup alternatives remain explicit boundaries; all required
+success and cleanup paths execute translated code. The generic batch snapshot
+matches original x86 at `01071D00`.
+
+Constructors 626–675 extend the continuous run across two event initializers,
+fixed-layout and name-interning families, copied-string initializers, and the
+existing deterministic `QueryPerformanceCounter` boundary. This batch exercises
+the translated colon-suffix branch at `0042507E`, which was previously bounded,
+because one constructor name contains `':'`. One allocation-failure entry and
+five untaken cleanup alternatives remain explicit boundaries. The complete
+snapshot matches original x86 at `01072A70`.
+
+The former constructor-466 and constructor-471 Rust checkpoint functions used
+the same setup and complete state comparison as the generic batch runner. They
+now call `run_constructor_batch_checkpoint()` and use the generic Python batch
+comparison; both original-x86 comparisons remain present and passing. Specialized
+neighboring checkpoints retain their dedicated fixtures.
+
+`verify-startup.cmd "D:\Warframe 2012"` passes 182 original-x86 comparisons,
+including 116 constructor comparisons, and exercises all 12,059 reachable
 instructions in the bounded group. All 20 Rust tests and five Python tests
 pass. Cache verification remains 44 framed entries, 12 unframed entries, one
 stored frame, and 192 compressed blocks across 25 archives. The headless asset
 check still loads the 43,708-byte SigninReward texture with a 256 x 32 top mip
 and three compressed frames.
 
-Last verified checkpoint: entry of constructor `0106DD60`, after the first 466
-constructors have returned. Next: analyze constructor 467 beginning at
-`0106DD60` and continue toward WinMain.
+Last verified checkpoint: entry of constructor `01072A70`, after the first 675
+logical constructors have returned. Next: extend the bounded constructor range from
+`01072A70`, continuing to use table-derived targets and grouped parity checks,
+then execute the post-`__cinit` path continuously toward WinMain.
 The alternate positive-duration
 path in `0041D1F0` remains recorded at `0041D209`. Continue through
 the constructor table, `__wincmdln` at `00F22689`, and WinMain at `00401140`.

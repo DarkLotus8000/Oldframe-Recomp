@@ -25,11 +25,14 @@ preview are the first verified pieces of that work.
 
 ## Known working baseline
 
-v0.10.0 passed all 19 unit tests on the user's Windows machine and displayed
+v0.10.0 currently passes all 20 unit tests on the user's Windows machine and displayed
 the original SigninReward texture in a Win32 window. The preview uses Rust
 for process startup and painting and translated x86 for archive reading and
-decompression. Original game startup has yet to be exercised by the new
-executable. Read `README.md` and `INTERNALS.md` before extending the lift.
+decompression. The bounded translated startup path has reached constructor
+checkpoint `01072A70` after 675 logical constructors, with 182 original-x86
+comparisons covering all 12,059 admitted instructions. Continuous engine startup,
+WinMain, and the title screen remain unverified. Read `README.md` and
+`INTERNALS.md` before extending the lift.
 
 ## Local validation
 
@@ -41,7 +44,7 @@ before running Cargo. Change the generator when changing generated code.
 py lift.py "D:\Warframe 2012\Warframe.exe" && cargo test --offline && cargo run --release --offline -- "D:\Warframe 2012" && target\release\warframe-u51-decoder-recomp.exe "D:\Warframe 2012" --asset-info
 ```
 
-The v0.10.0 baseline is 19 tests. The known Windows archive sample matched
+The current v0.10.0 baseline is 20 tests. The known Windows archive sample matched
 44 framed entries, 12 unframed entries, one stored frame, and 192 compressed
 blocks across 25 archives. The preview asset is 43,708 decoded bytes, a
 256 × 32 top mip, and three compressed frames. The archive totals describe
@@ -58,11 +61,11 @@ target\release\warframe-u51-decoder-recomp.exe "D:\Warframe 2012" --window
 
 ## Next milestone
 
-Bring up a bounded slice of original U5.1 startup in the recompiled
-executable. Inspect the original PE entry path, then choose an original
-initialization routine with a reproducible result. Use that entry path to
-extend the lifter so it can discover and translate supported direct-call and
-branch targets as a group. Keep the current cache path as a regression check.
+Continue the bounded original U5.1 startup path from constructor checkpoint
+`01072A70`. Use table-derived constructor targets and generic grouped parity
+checks while completing required initialization, then transition to a
+continuous post-`__cinit` execution path toward `__wincmdln` at `00F22689`
+and WinMain at `00401140`. Keep the cache path as a regression check.
 
 Build a repeatable command that executes the translated startup code and logs
 a named checkpoint. Verify at least one meaningful return value or state

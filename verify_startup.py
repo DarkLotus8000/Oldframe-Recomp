@@ -15,6 +15,7 @@ from lift import pe_sections
 
 # Reversible stand-in used only by the deterministic startup fixture.
 STARTUP_FIXTURE_POINTER_XOR = 0xa5a55a5a
+BATCHED_CONSTRUCTOR_CHECKPOINTS = {466, 471, 473, 476, 478, 479, 480, 483, 487, 491, 494, 500, 506, 512, 526, 555, 585, 625, 675, 688, 690}
 
 
 def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xffffffff, runtime_variant=None, allocator_variant=None, locale_case=False, environment_variant=None, argv_case=False, envp_case=False, cinit_case=False, preinitializer_case=False, atexit_case=False, constructor_case=False, constructor_two_case=False, constructor_three_case=False, constructor_four_case=False, constructor_eight_case=False, constructor_nine_case=False, constructor_twelve_case=False, constructor_twenty_two_case=False, constructor_twenty_two_seed=0, constructor_twenty_four_case=False, constructor_twenty_five_case=False, constructor_thirty_two_case=False, constructor_thirty_three_case=False, constructor_thirty_seven_case=False, constructor_forty_one_case=False, constructor_forty_three_case=False, constructor_forty_four_case=False, constructor_forty_five_case=False, constructor_forty_six_case=False, constructor_forty_seven_case=False, constructor_forty_eight_case=False, constructor_forty_nine_case=False, constructor_fifty_case=False, constructor_fifty_one_case=False, constructor_fifty_two_case=False, constructor_fifty_three_case=False, constructor_fifty_five_case=False, constructor_fifty_six_case=False, constructor_fifty_seven_case=False, constructor_fifty_eight_case=False, constructor_fifty_nine_case=False, constructor_sixty_case=False, constructor_sixty_one_case=False, constructor_sixty_two_case=False, constructor_sixty_five_case=False, constructor_seventy_three_case=False, constructor_seventy_four_case=False, constructor_eighty_seven_case=False, constructor_ninety_one_case=False, constructor_ninety_two_case=False, constructor_one_hundred_two_case=False, constructor_one_hundred_ten_case=False, constructor_one_hundred_eleven_case=False, constructor_one_hundred_sixteen_case=False, constructor_one_hundred_seventeen_case=False, constructor_one_hundred_twenty_eight_case=False, constructor_one_hundred_twenty_nine_case=False, constructor_one_hundred_thirty_case=False, constructor_one_hundred_thirty_one_case=False, constructor_one_hundred_thirty_seven_case=False, constructor_one_hundred_forty_three_case=False, constructor_one_hundred_forty_four_case=False, constructor_one_hundred_forty_five_case=False, constructor_one_hundred_forty_six_case=False, constructor_one_hundred_forty_seven_case=False, constructor_one_hundred_forty_eight_case=False, constructor_one_hundred_fifty_case=False, constructor_one_hundred_fifty_four_case=False, constructor_one_hundred_fifty_six_case=False, constructor_one_hundred_sixty_four_case=False, constructor_one_hundred_sixty_eight_case=False, constructor_one_hundred_seventy_eight_case=False, constructor_one_hundred_eighty_five_case=False, constructor_one_hundred_eighty_seven_case=False, constructor_two_hundred_twenty_nine_case=False, constructor_two_hundred_thirty_three_case=False, constructor_two_hundred_sixty_seven_case=False, constructor_two_hundred_sixty_eight_case=False, constructor_two_hundred_eighty_four_case=False, constructor_three_hundred_five_case=False, constructor_three_hundred_twenty_one_case=False, constructor_three_hundred_twenty_six_case=False, constructor_three_hundred_thirty_six_case=False, constructor_three_hundred_forty_case=False, constructor_three_hundred_forty_five_case=False, constructor_three_hundred_fifty_four_case=False, constructor_three_hundred_eighty_eight_case=False, constructor_four_hundred_case=False, constructor_four_hundred_one_case=False, constructor_four_hundred_sixteen_case=False, constructor_four_hundred_fifty_four_case=False, constructor_four_hundred_fifty_five_case=False, constructor_four_hundred_fifty_six_case=False, constructor_four_hundred_fifty_seven_case=False, constructor_four_hundred_fifty_eight_case=False, constructor_four_hundred_fifty_nine_case=False, constructor_four_hundred_sixty_case=False, constructor_four_hundred_sixty_five_case=False, constructor_four_hundred_sixty_six_case=False, constructor_four_hundred_seventy_one_case=False, constructor_batch_case=False):
@@ -222,6 +223,19 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                 write(obj, destination); write(obj+4, length); write(obj+8, length if length > 15 else 15)
                 uc.mem_write(destination, data[:length+1])
                 result = obj
+            elif name == 'reserve_small_string':
+                obj, requested = uc.reg_read(UC_X86_REG_ECX), read(sp+4)
+                current, length, capacity = read(obj), read(obj+4), read(obj+8)
+                if requested > capacity:
+                    destination = heap_state['next']
+                    uc.mem_write(destination, bytes(uc.mem_read(current, length+1)))
+                    write(obj, destination); write(obj+8, requested)
+                    heap_state['next'] = (destination+requested+1+15)&~15
+                result = obj
+            elif name == 'memmove':
+                destination, source, count = read(sp+4), read(sp+8), read(sp+12)
+                uc.mem_write(destination, bytes(uc.mem_read(source, count)))
+                result = destination
             elif name == 'memset':
                 destination, value, count = read(sp+4), read(sp+8) & 0xff, read(sp+12)
                 uc.mem_write(destination, bytes([value]) * count)
@@ -325,7 +339,7 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
                 heap_state['next'] = (result+size+15)&~15
             elif name == 'game_allocate':
                 descriptor, size, count = read(sp+4), read(sp+8), read(sp+12)
-                if descriptor not in (0x128f238, 0x129a4c8, 0x12a18a8, 0x1313c98, 0x12a79f0, 0x12cacec) or count != 1 or not size or (descriptor == 0x129a4c8 and size != 8) or (descriptor == 0x12a18a8 and size != 0x30) or (descriptor == 0x1313c98 and size != 0x38) or (descriptor == 0x12a79f0 and size != 0x30) or (descriptor == 0x12cacec and size != 8):
+                if descriptor not in (0x128f238, 0x129a4c8, 0x12a18a8, 0x1313c98, 0x12a79f0, 0x12cacec) or count != 1 or not size or (descriptor == 0x129a4c8 and size != 8) or (descriptor == 0x12a18a8 and size != 0x30) or (descriptor == 0x1313c98 and size != 0x38) or (descriptor == 0x12a79f0 and size != 0x30) or (descriptor == 0x12cacec and size not in (8, 44)):
                     raise RuntimeError(f'unexpected original game allocation {[descriptor, size, count]}')
                 result = 0 if descriptor == 0x129a4c8 and (constructor_one_hundred_thirty_one_case == 2 or constructor_one_hundred_thirty_seven_case == 2 or constructor_one_hundred_forty_three_case == 2 or constructor_one_hundred_forty_four_case == 2 or constructor_one_hundred_fifty_case == 2) else heap_state['next']
                 total = size * count
@@ -459,14 +473,7 @@ def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xfff
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP),
                  uc.reg_read(UC_X86_REG_EAX), argc, argv, heap_state['next'],
                  pointers, data, calls), visited)
-    if constructor_batch_case or constructor_four_hundred_seventy_one_case:
-        encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
-        begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
-        return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
-                 heap_state['next'], bytes(uc.mem_read(0x1327000, 0x1000)).hex(),
-                 bytes(uc.mem_read(0x80000, heap_state['next']-0x80000)).hex(),
-                 bytes(uc.mem_read(begin, end-begin)).hex(), calls), visited)
-    if constructor_four_hundred_sixty_six_case:
+    if constructor_batch_case:
         encoded_begin, encoded_end = read(0x1359da8), read(0x1359da4)
         begin, end = encoded_begin ^ STARTUP_FIXTURE_POINTER_XOR, encoded_end ^ STARTUP_FIXTURE_POINTER_XOR
         return ((uc.reg_read(UC_X86_REG_ESP), uc.reg_read(UC_X86_REG_EBP), uc.reg_read(UC_X86_REG_EAX),
@@ -1069,24 +1076,14 @@ def main():
     cases, frame_cases, runtime_cases, allocator_cases, locale_cases, environment_cases, argv_cases, envp_cases, cinit_cases, preinitializer_cases, atexit_cases, constructor_cases, constructor_two_cases, constructor_three_cases, constructor_four_cases, constructor_eight_cases, constructor_nine_cases, constructor_twelve_cases, constructor_twenty_two_cases, constructor_twenty_four_cases, constructor_twenty_five_cases, constructor_thirty_two_cases, constructor_thirty_three_cases, constructor_thirty_seven_cases, constructor_forty_one_cases, constructor_forty_three_cases, constructor_forty_four_cases, constructor_forty_five_cases, constructor_forty_six_cases, constructor_forty_seven_cases, constructor_forty_eight_cases, constructor_forty_nine_cases, constructor_fifty_cases, constructor_fifty_one_cases, constructor_fifty_two_cases, constructor_fifty_three_cases, constructor_fifty_five_cases, constructor_fifty_six_cases, constructor_fifty_seven_cases, constructor_fifty_eight_cases, constructor_fifty_nine_cases, constructor_sixty_cases, constructor_sixty_one_cases, constructor_sixty_two_cases, constructor_sixty_five_cases, constructor_seventy_three_cases, constructor_seventy_four_cases, constructor_eighty_seven_cases, constructor_ninety_one_cases, constructor_ninety_two_cases, constructor_one_hundred_two_cases, constructor_one_hundred_ten_cases, constructor_one_hundred_eleven_cases, constructor_one_hundred_sixteen_cases, constructor_one_hundred_seventeen_cases, constructor_one_hundred_twenty_eight_cases, constructor_one_hundred_twenty_nine_cases, constructor_one_hundred_thirty_cases, constructor_one_hundred_thirty_one_cases, constructor_one_hundred_thirty_seven_cases, constructor_one_hundred_forty_three_cases, constructor_one_hundred_forty_four_cases, constructor_one_hundred_forty_five_cases, constructor_one_hundred_forty_six_cases, constructor_one_hundred_forty_seven_cases, constructor_one_hundred_forty_eight_cases, constructor_one_hundred_fifty_cases, constructor_one_hundred_fifty_four_cases, constructor_one_hundred_fifty_six_cases, constructor_one_hundred_sixty_four_cases, constructor_one_hundred_sixty_eight_cases, constructor_one_hundred_seventy_eight_cases, constructor_one_hundred_eighty_five_cases, constructor_one_hundred_eighty_seven_cases, constructor_two_hundred_twenty_nine_cases, constructor_two_hundred_thirty_three_cases, constructor_two_hundred_sixty_seven_cases, constructor_two_hundred_sixty_eight_cases, constructor_two_hundred_eighty_four_cases, constructor_three_hundred_five_cases, constructor_three_hundred_twenty_one_cases, constructor_three_hundred_twenty_six_cases, constructor_three_hundred_thirty_six_cases, constructor_three_hundred_forty_cases, constructor_three_hundred_forty_five_cases, constructor_three_hundred_fifty_four_cases, constructor_three_hundred_eighty_eight_cases, constructor_four_hundred_cases, constructor_four_hundred_one_cases, constructor_four_hundred_sixteen_cases, constructor_four_hundred_fifty_four_cases, constructor_four_hundred_fifty_five_cases, constructor_four_hundred_fifty_six_cases, constructor_four_hundred_fifty_seven_cases, constructor_four_hundred_fifty_eight_cases, constructor_four_hundred_fifty_nine_cases, constructor_four_hundred_sixty_cases, constructor_four_hundred_sixty_five_cases, constructor_four_hundred_sixty_six_cases, constructor_four_hundred_seventy_one_cases, visited = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, set()
     batched_constructor_cases = 0
     for line in output.splitlines():
-        if line.startswith('STARTUP_CONSTRUCTOR_473_READY '):
+        if (line.startswith('STARTUP_CONSTRUCTOR_') and '_READY ' in line
+                and int(line.split('_')[2]) in BATCHED_CONSTRUCTOR_CHECKPOINTS):
+            number = int(line.split('_')[2])
             fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
             expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_batch_case=True)
             actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
-            if actual != expected: raise RuntimeError(f'constructor batch 473 mismatch: actual={actual}; original={expected}')
-            visited.update(trace); batched_constructor_cases += 1; print('STARTUP_CONSTRUCTOR_473_READY original-x86=MATCH'); continue
-        if line.startswith('STARTUP_CONSTRUCTOR_471_READY '):
-            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
-            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_seventy_one_case=True)
-            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
-            if actual != expected: raise RuntimeError(f'constructor four-hundred-seventy-one mismatch: actual={actual}; original={expected}')
-            visited.update(trace); constructor_four_hundred_seventy_one_cases += 1; print('STARTUP_CONSTRUCTOR_471_READY original-x86=MATCH'); continue
-        if line.startswith('STARTUP_CONSTRUCTOR_466_READY '):
-            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
-            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_sixty_six_case=True)
-            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
-            if actual != expected: raise RuntimeError(f'constructor four-hundred-sixty-six mismatch: actual={actual}; original={expected}')
-            visited.update(trace); constructor_four_hundred_sixty_six_cases += 1; print('STARTUP_CONSTRUCTOR_466_READY original-x86=MATCH'); continue
+            if actual != expected: raise RuntimeError(f'constructor batch {number} mismatch: actual={actual}; original={expected}')
+            visited.update(trace); batched_constructor_cases += 1; print(f'STARTUP_CONSTRUCTOR_{number:03}_READY original-x86=MATCH'); continue
         if line.startswith('STARTUP_CONSTRUCTOR_465_READY '):
             fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
             expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_sixty_five_case=True)
@@ -1913,9 +1910,7 @@ def main():
     if constructor_four_hundred_fifty_nine_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-fifty-nine case, got {constructor_four_hundred_fifty_nine_cases}')
     if constructor_four_hundred_sixty_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-sixty case, got {constructor_four_hundred_sixty_cases}')
     if constructor_four_hundred_sixty_five_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-sixty-five case, got {constructor_four_hundred_sixty_five_cases}')
-    if constructor_four_hundred_sixty_six_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-sixty-six case, got {constructor_four_hundred_sixty_six_cases}')
-    if constructor_four_hundred_seventy_one_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-seventy-one case, got {constructor_four_hundred_seventy_one_cases}')
-    if batched_constructor_cases != 1: raise RuntimeError(f'expected one batched constructor case, got {batched_constructor_cases}')
+    if batched_constructor_cases != len(BATCHED_CONSTRUCTOR_CHECKPOINTS): raise RuntimeError(f'expected {len(BATCHED_CONSTRUCTOR_CHECKPOINTS)} batched constructor cases, got {batched_constructor_cases}')
     from startup_lift import discover, RANGES, STOPS
     code = discover(image, ENTRY, RANGES, STOPS, IMPORTS,
                     indirect_targets=startup_indirect_targets(image, RANGES))
