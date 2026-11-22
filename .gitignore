@@ -4,3 +4,4 @@
 /src/startup_lifted.rs
 /src/startup_data.bin
 /__pycache__/
+/.codex-*.log

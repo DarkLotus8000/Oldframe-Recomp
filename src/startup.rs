@@ -197,6 +197,7 @@ impl Memory {
                 let value = match (ecx, input) {
                     (0x131d5f0, 0x3f800000) => 42,
                     (0x1327590, 0x3f000000) => 21,
+                    (0x1332468, 0x3fc00000) => 63,
                     _ => {
                     return Err(format!("unexpected duration initializer {ecx:#x}, {:#x}", self.read32(stack)));
                     }
@@ -896,6 +897,16 @@ pub fn run_checkpoints() -> Result<(), String> {
     run_constructor_batch_checkpoint(675, 0x1072a70)?;
     run_constructor_batch_checkpoint(688, 0x1073160)?;
     run_constructor_batch_checkpoint(690, 0x1073210)?;
+    run_constructor_batch_checkpoint(724, 0x1073ad0)?;
+    run_constructor_batch_checkpoint(725, 0x1073ba0)?;
+    run_constructor_batch_checkpoint(736, 0x10742d0)?;
+    run_constructor_batch_checkpoint(754, 0x10749e0)?;
+    run_constructor_batch_checkpoint(778, 0x10752f0)?;
+    run_constructor_batch_checkpoint(798, 0x1075ff0)?;
+    run_constructor_batch_checkpoint(807, 0x1076220)?;
+    run_constructor_batch_checkpoint(808, 0x1076240)?;
+    run_constructor_batch_checkpoint(847, 0x1076680)?;
+    run_constructor_batch_checkpoint(852, 0x10769d0)?;
     run_allocator_checkpoints()?;
     run_locale_checkpoints()?;
     Ok(())

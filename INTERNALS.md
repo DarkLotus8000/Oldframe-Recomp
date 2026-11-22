@@ -1503,23 +1503,110 @@ because one constructor name contains `':'`. One allocation-failure entry and
 five untaken cleanup alternatives remain explicit boundaries. The complete
 snapshot matches original x86 at `01072A70`.
 
+Constructors 676–688 continue through event and fixed-layout initializer
+families. Successful allocations and required cleanup execute translated game
+code. Four allocation-failure entries and ten untaken cleanup alternatives are
+kept as explicit untaken error/cleanup boundaries. The generic batch snapshot
+matches original x86 at `01073160`.
+
+Constructors 689–690 translate the small-string concatenation helper at
+`00415F00`. Focused Ghidra reports 48 instructions, three basic blocks, two
+resolved callees, and no unresolved calls (summary parent Evidence
+`ev_c72bdce386d62f595c8933712d4f7a498e0c0ac10bc5b734f8f7241462c789b9`;
+summary projection Evidence
+`ev_88178a8591f09c46547dbc2401250b0dbc515724bddacaa7d8f876f1535dba29`;
+instruction Evidence
+`ev_c446407160c72629ca17974275b2616add808e90101fa1b6b3060f91c82f8500`).
+The deterministic verifier supplies narrow substitutes for the reserve helper
+at `004158D0` and overlap-safe `memmove` at `00F18440`. These are verification
+fixtures for equivalent startup inputs, not claims that simplified allocation,
+string, or CRT behavior is sufficient for the production game runtime. The
+untaken temporary-string cleanup alternative at `010731A4` remains explicit.
+There are no unsupported instructions or unresolved direct calls on the
+verified success path. The generic batch state matches original x86 at
+`01073210`.
+
+Constructors 691–724 continue as one generic batch through copied small-string,
+name-interning, scalar, and fixed-layout initializers. They use already verified
+translated helpers and introduce no unsupported instructions, unresolved calls,
+or new host runtime boundaries. The full snapshot matches original x86 at
+`01073AD0`. Constructor 725 then runs a callback-backed event initializer. Its
+required long-string cleanup executes translated code; the allocation-failure
+entry at `01073B37` and unused inline-string cleanup entry at `01073B4C` remain
+explicit untaken boundaries. The first attempt incorrectly classified
+`01073B6D` as untaken; execution reached it, so it was admitted as required code
+before recording the checkpoint. The generic batch matches original x86 at
+`01073BA0`.
+
+Constructors 726–736 extend the generic batch across five callback-backed event
+initializers, four callback-free event initializers, and two fixed-layout
+initializers. Five allocation-failure entries and ten cleanup-condition blocks
+for inline strings remain explicit untaken boundaries. Every long-string free
+required by the observed success path executes translated code. The initial
+boundary list stopped at the free calls, which left the preceding capacity
+checks admitted but unexercised; moving the stops to those condition blocks and
+recognizing the inline `"Stops the timer"` description restored complete
+coverage. No unsupported instruction, unresolved call, or new runtime substitute
+is present in this batch. The complete snapshot matches original x86 at
+`010742D0`.
+
+Constructors 737–754 continue as one generic batch through three
+callback-backed events, three callback-free events, fixed-layout initializers,
+and leaf scalar/callback constructors. Three allocation-failure entries and six
+inline-string cleanup condition blocks remain explicit untaken boundaries; all
+required long-string cleanup executes translated code. The batch introduces no
+unsupported instruction, unresolved call, or new runtime substitute, and its
+complete state matches original x86 at `010749E0`.
+
+Constructors 755–778 add fixed-layout engine types plus music and mover event
+initializers in one generic batch. Four allocation-failure entries and six
+inline action-name cleanup condition blocks remain explicit untaken boundaries;
+all required long-description cleanup executes translated code. No unsupported
+instruction, unresolved call, or new runtime substitute is needed, and the full
+snapshot matches original x86 at `010752F0`.
+
+Constructors 779–798 cover the larger mover event family and four fixed/leaf
+initializers in one generic batch. Eleven allocation-failure entries and sixteen
+inline-string cleanup condition blocks remain explicit untaken boundaries. The
+long `OnTransitionStarted` name and all required long descriptions execute their
+translated cleanup paths. The original-x86 oracle first stopped inside already
+verified helper `00425060` after exhausting its 262,144-instruction cap; the
+named deterministic `ORIGINAL_X86_INSTRUCTION_BUDGET` is now 524,288. With that
+verification-only capacity increase, the complete state matches original x86 at
+`01075FF0`; no unsupported instruction, unresolved call, or new runtime
+substitute is introduced.
+
+Constructors 799–807 add nine fixed-layout and name-interning initializers and
+match as one generic batch at `01076220`. Constructor 808 then initializes
+duration object `01332468` from fixed float `1.5`. The original comparison runs
+the shipped `0041D560` helper and x87 conversion path, producing timer value 63;
+the deterministic Rust fixture accepts only that exact additional object/input
+pair and is not a production timer implementation. Its state matches at
+`01076240`. Constructors 809–847 then run 39 existing fixed-layout,
+name-interning, scalar, and leaf initializer shapes as one generic batch to
+`01076680`. This larger cumulative run exceeded the generated translated
+runner's former 262,144-step guard inside already verified helper `00423B10`, so
+the named `TRANSLATED_STARTUP_EXECUTION_BUDGET` now matches the 524,288-step
+original-x86 oracle budget. No unsupported instruction or unresolved call was
+encountered.
+
 The former constructor-466 and constructor-471 Rust checkpoint functions used
 the same setup and complete state comparison as the generic batch runner. They
 now call `run_constructor_batch_checkpoint()` and use the generic Python batch
 comparison; both original-x86 comparisons remain present and passing. Specialized
 neighboring checkpoints retain their dedicated fixtures.
 
-`verify-startup.cmd "D:\Warframe 2012"` passes 182 original-x86 comparisons,
-including 116 constructor comparisons, and exercises all 12,059 reachable
+`verify-startup.cmd "D:\Warframe 2012"` passes 193 original-x86 comparisons,
+including 127 constructor comparisons, and exercises all 15,421 reachable
 instructions in the bounded group. All 20 Rust tests and five Python tests
 pass. Cache verification remains 44 framed entries, 12 unframed entries, one
 stored frame, and 192 compressed blocks across 25 archives. The headless asset
 check still loads the 43,708-byte SigninReward texture with a 256 x 32 top mip
 and three compressed frames.
 
-Last verified checkpoint: entry of constructor `01072A70`, after the first 675
+Last verified checkpoint: entry of constructor `01076680`, after the first 847
 logical constructors have returned. Next: extend the bounded constructor range from
-`01072A70`, continuing to use table-derived targets and grouped parity checks,
+`01076680`, continuing to use table-derived targets and grouped parity checks,
 then execute the post-`__cinit` path continuously toward WinMain.
 The alternate positive-duration
 path in `0041D1F0` remains recorded at `0041D209`. Continue through
