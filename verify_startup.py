@@ -16,7 +16,7 @@ from lift import pe_sections
 # Reversible stand-in used only by the deterministic startup fixture.
 STARTUP_FIXTURE_POINTER_XOR = 0xa5a55a5a
 ORIGINAL_X86_INSTRUCTION_BUDGET = 524288
-BATCHED_CONSTRUCTOR_CHECKPOINTS = {466, 471, 473, 476, 478, 479, 480, 483, 487, 491, 494, 500, 506, 512, 526, 555, 585, 625, 675, 688, 690, 724, 725, 736, 754, 778, 798, 807, 808, 847, 852}
+BATCHED_CONSTRUCTOR_CHECKPOINTS = {456, 457, 458, 459, 460, 465, 466, 471, 473, 476, 478, 479, 480, 483, 487, 491, 494, 500, 506, 512, 526, 555, 585, 625, 675, 688, 690, 724, 725, 736, 754, 778, 798, 807, 808, 847, 852, 854, 855, 864, 870, 880, 897}
 
 
 def original(image, initial, entropy, stop=CHECKPOINT, variant=0, previous=0xffffffff, runtime_variant=None, allocator_variant=None, locale_case=False, environment_variant=None, argv_case=False, envp_case=False, cinit_case=False, preinitializer_case=False, atexit_case=False, constructor_case=False, constructor_two_case=False, constructor_three_case=False, constructor_four_case=False, constructor_eight_case=False, constructor_nine_case=False, constructor_twelve_case=False, constructor_twenty_two_case=False, constructor_twenty_two_seed=0, constructor_twenty_four_case=False, constructor_twenty_five_case=False, constructor_thirty_two_case=False, constructor_thirty_three_case=False, constructor_thirty_seven_case=False, constructor_forty_one_case=False, constructor_forty_three_case=False, constructor_forty_four_case=False, constructor_forty_five_case=False, constructor_forty_six_case=False, constructor_forty_seven_case=False, constructor_forty_eight_case=False, constructor_forty_nine_case=False, constructor_fifty_case=False, constructor_fifty_one_case=False, constructor_fifty_two_case=False, constructor_fifty_three_case=False, constructor_fifty_five_case=False, constructor_fifty_six_case=False, constructor_fifty_seven_case=False, constructor_fifty_eight_case=False, constructor_fifty_nine_case=False, constructor_sixty_case=False, constructor_sixty_one_case=False, constructor_sixty_two_case=False, constructor_sixty_five_case=False, constructor_seventy_three_case=False, constructor_seventy_four_case=False, constructor_eighty_seven_case=False, constructor_ninety_one_case=False, constructor_ninety_two_case=False, constructor_one_hundred_two_case=False, constructor_one_hundred_ten_case=False, constructor_one_hundred_eleven_case=False, constructor_one_hundred_sixteen_case=False, constructor_one_hundred_seventeen_case=False, constructor_one_hundred_twenty_eight_case=False, constructor_one_hundred_twenty_nine_case=False, constructor_one_hundred_thirty_case=False, constructor_one_hundred_thirty_one_case=False, constructor_one_hundred_thirty_seven_case=False, constructor_one_hundred_forty_three_case=False, constructor_one_hundred_forty_four_case=False, constructor_one_hundred_forty_five_case=False, constructor_one_hundred_forty_six_case=False, constructor_one_hundred_forty_seven_case=False, constructor_one_hundred_forty_eight_case=False, constructor_one_hundred_fifty_case=False, constructor_one_hundred_fifty_four_case=False, constructor_one_hundred_fifty_six_case=False, constructor_one_hundred_sixty_four_case=False, constructor_one_hundred_sixty_eight_case=False, constructor_one_hundred_seventy_eight_case=False, constructor_one_hundred_eighty_five_case=False, constructor_one_hundred_eighty_seven_case=False, constructor_two_hundred_twenty_nine_case=False, constructor_two_hundred_thirty_three_case=False, constructor_two_hundred_sixty_seven_case=False, constructor_two_hundred_sixty_eight_case=False, constructor_two_hundred_eighty_four_case=False, constructor_three_hundred_five_case=False, constructor_three_hundred_twenty_one_case=False, constructor_three_hundred_twenty_six_case=False, constructor_three_hundred_thirty_six_case=False, constructor_three_hundred_forty_case=False, constructor_three_hundred_forty_five_case=False, constructor_three_hundred_fifty_four_case=False, constructor_three_hundred_eighty_eight_case=False, constructor_four_hundred_case=False, constructor_four_hundred_one_case=False, constructor_four_hundred_sixteen_case=False, constructor_four_hundred_fifty_four_case=False, constructor_four_hundred_fifty_five_case=False, constructor_four_hundred_fifty_six_case=False, constructor_four_hundred_fifty_seven_case=False, constructor_four_hundred_fifty_eight_case=False, constructor_four_hundred_fifty_nine_case=False, constructor_four_hundred_sixty_case=False, constructor_four_hundred_sixty_five_case=False, constructor_four_hundred_sixty_six_case=False, constructor_four_hundred_seventy_one_case=False, constructor_batch_case=False):
@@ -1085,42 +1085,6 @@ def main():
             actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
             if actual != expected: raise RuntimeError(f'constructor batch {number} mismatch: actual={actual}; original={expected}')
             visited.update(trace); batched_constructor_cases += 1; print(f'STARTUP_CONSTRUCTOR_{number:03}_READY original-x86=MATCH'); continue
-        if line.startswith('STARTUP_CONSTRUCTOR_465_READY '):
-            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
-            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_sixty_five_case=True)
-            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
-            if actual != expected: raise RuntimeError(f'constructor four-hundred-sixty-five mismatch: actual={actual}; original={expected}')
-            visited.update(trace); constructor_four_hundred_sixty_five_cases += 1; print('STARTUP_CONSTRUCTOR_465_READY original-x86=MATCH'); continue
-        if line.startswith('STARTUP_CONSTRUCTOR_460_READY '):
-            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
-            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_sixty_case=True)
-            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
-            if actual != expected: raise RuntimeError(f'constructor four-hundred-sixty mismatch: actual={actual}; original={expected}')
-            visited.update(trace); constructor_four_hundred_sixty_cases += 1; print('STARTUP_CONSTRUCTOR_460_READY original-x86=MATCH'); continue
-        if line.startswith('STARTUP_CONSTRUCTOR_459_READY '):
-            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
-            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_fifty_nine_case=True)
-            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
-            if actual != expected: raise RuntimeError(f'constructor four-hundred-fifty-nine mismatch: actual={actual}; original={expected}')
-            visited.update(trace); constructor_four_hundred_fifty_nine_cases += 1; print('STARTUP_CONSTRUCTOR_459_READY original-x86=MATCH'); continue
-        if line.startswith('STARTUP_CONSTRUCTOR_458_READY '):
-            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
-            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_fifty_eight_case=True)
-            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
-            if actual != expected: raise RuntimeError(f'constructor four-hundred-fifty-eight mismatch: actual={actual}; original={expected}')
-            visited.update(trace); constructor_four_hundred_fifty_eight_cases += 1; print('STARTUP_CONSTRUCTOR_458_READY original-x86=MATCH'); continue
-        if line.startswith('STARTUP_CONSTRUCTOR_457_READY '):
-            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
-            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_fifty_seven_case=True)
-            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
-            if actual != expected: raise RuntimeError(f'constructor four-hundred-fifty-seven mismatch: actual={actual}; original={expected}')
-            visited.update(trace); constructor_four_hundred_fifty_seven_cases += 1; print('STARTUP_CONSTRUCTOR_457_READY original-x86=MATCH'); continue
-        if line.startswith('STARTUP_CONSTRUCTOR_456_READY '):
-            fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
-            expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_fifty_six_case=True)
-            actual = tuple(int(fields[key],16) for key in ('stack','frame','eax','next')) + (fields['state'], fields['heap'], fields['callbacks'], [int(x,16) for x in fields['calls'].split(',') if x])
-            if actual != expected: raise RuntimeError(f'constructor four-hundred-fifty-six mismatch: actual={actual}; original={expected}')
-            visited.update(trace); constructor_four_hundred_fifty_six_cases += 1; print('STARTUP_CONSTRUCTOR_456_READY original-x86=MATCH'); continue
         if line.startswith('STARTUP_CONSTRUCTOR_455_READY '):
             fields = dict(item.split('=') for item in line.split()[1:]); stop = int(fields['stop'], 16)
             expected, trace = original(image, 0xbb40e64e, 0x12345678, stop=stop, runtime_variant=34, constructor_four_hundred_fifty_five_case=True)
@@ -1905,12 +1869,6 @@ def main():
     if constructor_four_hundred_sixteen_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-sixteen case, got {constructor_four_hundred_sixteen_cases}')
     if constructor_four_hundred_fifty_four_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-fifty-four case, got {constructor_four_hundred_fifty_four_cases}')
     if constructor_four_hundred_fifty_five_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-fifty-five case, got {constructor_four_hundred_fifty_five_cases}')
-    if constructor_four_hundred_fifty_six_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-fifty-six case, got {constructor_four_hundred_fifty_six_cases}')
-    if constructor_four_hundred_fifty_seven_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-fifty-seven case, got {constructor_four_hundred_fifty_seven_cases}')
-    if constructor_four_hundred_fifty_eight_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-fifty-eight case, got {constructor_four_hundred_fifty_eight_cases}')
-    if constructor_four_hundred_fifty_nine_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-fifty-nine case, got {constructor_four_hundred_fifty_nine_cases}')
-    if constructor_four_hundred_sixty_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-sixty case, got {constructor_four_hundred_sixty_cases}')
-    if constructor_four_hundred_sixty_five_cases != 1: raise RuntimeError(f'expected one constructor four-hundred-sixty-five case, got {constructor_four_hundred_sixty_five_cases}')
     if batched_constructor_cases != len(BATCHED_CONSTRUCTOR_CHECKPOINTS): raise RuntimeError(f'expected {len(BATCHED_CONSTRUCTOR_CHECKPOINTS)} batched constructor cases, got {batched_constructor_cases}')
     from startup_lift import discover, RANGES, STOPS
     code = discover(image, ENTRY, RANGES, STOPS, IMPORTS,

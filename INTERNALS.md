@@ -1596,17 +1596,76 @@ now call `run_constructor_batch_checkpoint()` and use the generic Python batch
 comparison; both original-x86 comparisons remain present and passing. Specialized
 neighboring checkpoints retain their dedicated fixtures.
 
-`verify-startup.cmd "D:\Warframe 2012"` passes 193 original-x86 comparisons,
-including 127 constructor comparisons, and exercises all 15,421 reachable
+Constructors 848–852 execute five context-action event initializers as one
+generic batch through `010769D0`. The original x86 comparisons cover the
+allocation-failure boundary at `01076967` and retain the inline cleanup stops
+at `010766C9`, `01076769`, `01076809`, `010768A9`, and `0107697C`. No new
+unsupported instruction, unresolved call, or runtime substitute was required.
+
+The older checkpoints 456–460 and 465 now use the same generic constructor
+batch runner and comparison parser as later equivalent checkpoints. Their
+fixture seeds, `01327000..01328000` state range, heap bytes, decoded callback
+span, registers, and call traces remain unchanged. Constructors 416, 454, and
+455 retain their specialized state ranges and dedicated comparisons.
+
+Constructors 853–854 are two fixed-layout `00425060` objects and match as a
+generic batch at `01076A70`. Constructor 855 is a distinct string-backed
+registration initializer at `01076A70`; it executes translated `00415B30`,
+`004A1A30`, allocation, second-string cleanup, `_atexit`, and cookie-check
+paths before matching at `01076B10`. The deterministic fixture keeps its first
+short string inline, so the unused first-string heap-free path is recorded as
+the explicit stop `01076AB9`.
+
+Focused Ghidra analysis identifies `01076A70` as a 44-instruction function with
+seven basic blocks, five resolved callees, and no unresolved calls (Evidence
+`ev_8ed4a147f2f1661d9b57bb1b6ce7eb4f0632d364e63d96347c686c538f5fd902`).
+Ghidra did not define procedure entries for the two preceding fixed-layout
+constructors, so their evidence remains direct PE decoding plus original-x86
+Unicorn execution. No new runtime substitute was required.
+
+Constructors 856–863 are eight more fixed-layout `00425060` objects.
+Constructor 864 at `01076D70` initializes two inline strings, registers an
+eight-byte engine callback object, performs `_atexit` registration, and checks
+the security cookie. Its allocation-failure path at `01076DD7` and unused
+inline-string cleanup paths at `01076DEC` and `01076E0D` remain explicit stops.
+The combined state matches original x86 at `01076E40`.
+
+Constructor 865 repeats that allocation/string shape with a different callback
+method; its allocation-failure path at `01076EA7` and unused cleanup paths at
+`01076EBC` and `01076EDD` are explicit. Constructors 866–869 are four existing
+fixed-layout objects. Constructor 870 copies a short literal into global string
+state through translated `00415B30` and `00415AE0`; its untaken heap cleanup
+starts at `0107707A`. The generic batch matches at `010770A0`. No new runtime
+substitute, unsupported instruction, or unresolved call was required.
+
+A focused paired Ghidra summary request for `01076E40` and `01077050` did not
+complete and was terminated without producing evidence; this milestone relies
+on direct PE decoding and original-x86 Unicorn execution for those functions.
+The original executable remained read-only.
+
+Constructors 871–880 form a branch-free generic batch through `01077330`.
+They comprise one fixed-layout object, one translated scalar `MOVSS`/`MULSS`
+initializer, six more fixed-layout objects, one `_atexit`-only registration,
+and a final fixed-layout object. Their complete state, callback table, heap,
+registers, and call sequence match original x86. No new runtime substitute,
+unsupported instruction, unresolved call, or bounded error path was required.
+
+A focused Ghidra summary request for the scalar constructor `010770F0` remained
+live without returning a result and was terminated; no REA evidence is claimed
+for it. Direct PE decoding and original-x86 Unicorn execution provide the
+verification evidence for this batch.
+
+`verify-startup.cmd "D:\Warframe 2012"` passes 199 original-x86 comparisons,
+including 133 constructor comparisons, and exercises all 16,088 reachable
 instructions in the bounded group. All 20 Rust tests and five Python tests
 pass. Cache verification remains 44 framed entries, 12 unframed entries, one
 stored frame, and 192 compressed blocks across 25 archives. The headless asset
 check still loads the 43,708-byte SigninReward texture with a 256 x 32 top mip
 and three compressed frames.
 
-Last verified checkpoint: entry of constructor `01076680`, after the first 847
+Last verified checkpoint: entry of constructor `01077330`, after the first 880
 logical constructors have returned. Next: extend the bounded constructor range from
-`01076680`, continuing to use table-derived targets and grouped parity checks,
+`01077330`, continuing to use table-derived targets and grouped parity checks,
 then execute the post-`__cinit` path continuously toward WinMain.
 The alternate positive-duration
 path in `0041D1F0` remains recorded at `0041D209`. Continue through
