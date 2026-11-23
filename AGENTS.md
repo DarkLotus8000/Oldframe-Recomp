@@ -29,8 +29,8 @@ v0.10.0 currently passes all 20 unit tests on the user's Windows machine and dis
 the original SigninReward texture in a Win32 window. The preview uses Rust
 for process startup and painting and translated x86 for archive reading and
 decompression. The bounded translated startup path has reached constructor
-checkpoint `01077330` after 880 logical constructors, with 199 original-x86
-comparisons covering all 16,088 admitted instructions. Continuous engine startup,
+checkpoint `01079EE0` after 1,021 logical constructors, with 213 original-x86
+comparisons covering all 18,388 admitted instructions. Continuous engine startup,
 WinMain, and the title screen remain unverified. Read `README.md` and
 `INTERNALS.md` before extending the lift.
 
@@ -43,6 +43,15 @@ before running Cargo. Change the generator when changing generated code.
 ```cmd
 py lift.py "D:\Warframe 2012\Warframe.exe" && cargo test --offline && cargo run --release --offline -- "D:\Warframe 2012" && target\release\warframe-u51-decoder-recomp.exe "D:\Warframe 2012" --asset-info
 ```
+
+For focused startup iteration, use the debug executable and Unicorn parity check:
+
+```cmd
+verify-startup-debug.cmd "D:\Warframe 2012"
+```
+
+Use `verify-startup.cmd "D:\Warframe 2012"` for optimized milestone builds and
+the complete startup, cache, and asset regression suite.
 
 The current v0.10.0 baseline is 20 tests. The known Windows archive sample matched
 44 framed entries, 12 unframed entries, one stored frame, and 192 compressed
@@ -62,7 +71,7 @@ target\release\warframe-u51-decoder-recomp.exe "D:\Warframe 2012" --window
 ## Next milestone
 
 Continue the bounded original U5.1 startup path from constructor checkpoint
-`01077330`. Use table-derived constructor targets and generic grouped parity
+`01079EE0`. Use table-derived constructor targets and generic grouped parity
 checks while completing required initialization, then transition to a
 continuous post-`__cinit` execution path toward `__wincmdln` at `00F22689`
 and WinMain at `00401140`. Keep the cache path as a regression check.

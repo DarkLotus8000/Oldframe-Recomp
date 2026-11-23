@@ -913,6 +913,20 @@ pub fn run_checkpoints() -> Result<(), String> {
     run_constructor_batch_checkpoint(870, 0x10770a0)?;
     run_constructor_batch_checkpoint(880, 0x1077330)?;
     run_constructor_batch_checkpoint(897, 0x1077730)?;
+    run_constructor_batch_checkpoint(916, 0x1077b10)?;
+    run_constructor_batch_checkpoint(919, 0x1077d00)?;
+    run_constructor_batch_checkpoint(928, 0x1078000)?;
+    run_constructor_batch_checkpoint(933, 0x10783b0)?;
+    run_constructor_batch_checkpoint(940, 0x1078720)?;
+    run_constructor_batch_checkpoint(947, 0x10789f0)?;
+    run_constructor_batch_checkpoint(952, 0x1078bd0)?;
+    run_constructor_batch_checkpoint(959, 0x1079010)?;
+    run_constructor_batch_checkpoint(968, 0x10791c0)?;
+    run_constructor_batch_checkpoint(978, 0x1079450)?;
+    run_constructor_batch_checkpoint(999, 0x1079ae0)?;
+    run_constructor_batch_checkpoint(1009, 0x1079ce0)?;
+    run_constructor_batch_checkpoint(1021, 0x1079ee0)?;
+    run_constructor_batch_checkpoint(1072, 0x107a9a0)?;
     run_allocator_checkpoints()?;
     run_locale_checkpoints()?;
     Ok(())

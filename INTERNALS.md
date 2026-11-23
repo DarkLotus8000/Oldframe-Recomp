@@ -1655,17 +1655,99 @@ live without returning a result and was terminated; no REA evidence is claimed
 for it. Direct PE decoding and original-x86 Unicorn execution provide the
 verification evidence for this batch.
 
-`verify-startup.cmd "D:\Warframe 2012"` passes 199 original-x86 comparisons,
-including 133 constructor comparisons, and exercises all 16,088 reachable
+Constructors 881–897 reuse verified counter, fixed-layout object, scalar,
+short-string copy, and destructor-registration shapes through `01077730`. The
+first string-copy constructor uses a heap-backed source and executes its cleanup
+path at `0107748A` as translated game code. The next two sources remain inline,
+so their untaken cleanup paths at `010774DA` and `0107752A` are explicit stops.
+The complete cumulative state, heap, callbacks, registers, and call order match
+original x86. No new runtime substitute, unsupported instruction, or unresolved
+call was required.
+
+Constructors 898–916 continue with branch-free fixed-layout and scalar
+initializers through `01077B10`. Constructors 917–919 add one fixed-layout
+initializer and two allocation-backed string initializers through `01077D00`.
+For each string initializer, the verified fixture takes the successful
+allocation path; its allocation-failure and two conditional cleanup alternatives
+are explicit bounded-discovery stops at `01077BC7`, `01077BDC`, `01077BFD`,
+`01077C97`, `01077CAC`, and `01077CCD`. The cumulative constructor state,
+guest heap, callback table, registers, and call order match original x86.
+
+Constructors 920–928 reuse paired-string, fixed-layout, counter, scalar, and
+allocation-backed initialization shapes through `01078000`. The verified path
+executes the second cleanup in each paired-string constructor and the second
+cleanup in the final allocating constructor. Untaken alternatives are explicit
+stops at `01077D49`, `01077DE9`, `01077F97`, and `01077FAC`; they respectively
+represent two first-string cleanups, allocation failure, and a first-string
+cleanup. The cumulative state and executed call sequence match original x86.
+
+Constructors 929–947 extend the same generic batch through `010789F0`. They
+reuse paired-string, allocation-backed, fixed-layout, counter, and scalar
+initialization shapes. Coverage classified three allocation-failure branches
+and thirteen conditional cleanup alternatives as untaken bounded paths; the
+corresponding cleanup paths taken by the fixture remain translated and match
+original x86. No new host substitute, unsupported instruction, or unresolved
+callee was needed.
+
+A focused REA/Ghidra 12.1.4 batch decompiled constructors 929–933 at
+`01078000`, `010780D0`, `010781A0`, `01078270`, and `01078310`. All five
+requests succeeded against the verified executable SHA-256; retained batch
+Evidence is `ev_7227ed0f103e0ff5584e31a2ced2c536dc32ddd0c085ad86b3f40cf393389c19`.
+Direct PE decoding and original-x86 execution supplied the branch-level parity
+evidence for the complete group through constructor 947.
+
+Constructors 948–959 extend allocation-backed, paired-string, and fixed-layout
+initialization through `01079010`. Coverage identifies two allocation-failure
+branches and three conditional cleanup arms as untaken; cleanup arms executed by
+the fixture remain translated. Constructors 960–978 are branch-free short-string
+and fixed-layout initializers through `01079450`. All groups use the generic
+constructor batch verifier and introduce no new host substitute, unsupported
+instruction, or unresolved callee.
+
+A focused REA/Ghidra batch requested constructors 948–952 at `010789F0`,
+`01078A40`, `01078A90`, `01078AB0`, and `01078B00`. Ghidra recognized and
+decompiled the final allocation-backed constructor; the four shorter selectors
+had unknown procedure identity, so no decompilation claim is made for them.
+Retained batch Evidence is
+`ev_0eef0af9d82fbc82f2d2bb6b34a765e7bd6fd2544eb70d6ab41048d0a8c510ef`.
+Direct PE decoding and original-x86 execution verify the complete range.
+
+Constructors 979–1,021 extend the generic batch through `01079EE0`. The first
+21 are identical branch-free fixed-layout initializers. The remaining 22 use
+already verified fixed-layout, scalar, short-string, and destructor-registration
+shapes. Direct decoding found no conditional branch, new callee, unsupported
+instruction, or runtime substitute in this range. Cumulative guest state,
+callbacks, registers, and call order match original x86.
+
+A focused REA/Ghidra request for representative fixed-layout constructors
+`01079450` and `01079A90` completed with both selectors reported as unknown
+procedure identities; no pseudocode claim is made. Retained batch Evidence is
+`ev_7d13c98f26ddb70ad75f62543322eef030967cc4ea229ad2c0605326cf7a8f4d`.
+Direct PE decoding and the complete original-x86 parity trace cover both
+functions and the surrounding batch.
+
+Startup discovery now defaults to a named 65,536-instruction safeguard instead
+of the nearly exhausted 16,384-instruction default.
+`OLDFRAME_STARTUP_DISCOVERY_LIMIT` can override it for controlled analysis, but
+values below 16,384 or above 1,048,576 are rejected. This discovery limit applies
+only to code generation and does not constrain a future continuous runtime.
+`verify-startup-debug.cmd "D:\Warframe 2012"` regenerates the lift, runs the
+Python generator tests, builds the debug executable, and performs the complete
+Unicorn parity and instruction-coverage comparison. Its Cargo build completed in
+12.29 seconds for checkpoint 1,021. Optimized milestone verification remains in
+`verify-startup.cmd`, including Rust tests and the cache/asset checks.
+
+`verify-startup.cmd "D:\Warframe 2012"` passes 213 original-x86 comparisons,
+including 147 constructor comparisons, and exercises all 18,388 reachable
 instructions in the bounded group. All 20 Rust tests and five Python tests
 pass. Cache verification remains 44 framed entries, 12 unframed entries, one
 stored frame, and 192 compressed blocks across 25 archives. The headless asset
 check still loads the 43,708-byte SigninReward texture with a 256 x 32 top mip
 and three compressed frames.
 
-Last verified checkpoint: entry of constructor `01077330`, after the first 880
+Last verified checkpoint: entry of constructor `01079EE0`, after the first 1,021
 logical constructors have returned. Next: extend the bounded constructor range from
-`01077330`, continuing to use table-derived targets and grouped parity checks,
+`01079EE0`, continuing to use table-derived targets and grouped parity checks,
 then execute the post-`__cinit` path continuously toward WinMain.
 The alternate positive-duration
 path in `0041D1F0` remains recorded at `0041D209`. Continue through

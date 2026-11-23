@@ -59,8 +59,11 @@ verify-startup.cmd "D:\Warframe 2012"
 ```
 
 This generates the translations, runs tests and the release build, compares
-199 startup cases with original x86 in Unicorn, and checks caches and the
-preview asset. Run `target\release\warframe-u51-decoder-recomp.exe . --startup`
+213 startup cases with original x86 in Unicorn, and checks caches and the
+preview asset. Use `verify-startup-debug.cmd "D:\Warframe 2012"` while
+iterating on bounded startup; it builds the debug executable and runs the same
+startup parity and instruction-coverage checks without the release/cache pass.
+Run `target\release\warframe-u51-decoder-recomp.exe . --startup`
 for the compiled checkpoint alone. See [INTERNALS.md](INTERNALS.md) for the
 deterministic Windows API fixtures, verified state changes, and next boundary.
 

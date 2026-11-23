@@ -2,11 +2,16 @@
 from struct import unpack_from
 from pathlib import Path
 import hashlib
+import os
 import lift
 
 ENTRY = 0xF17D46
 CHECKPOINT = 0xF17BD9
 TRANSLATED_STARTUP_EXECUTION_BUDGET = 524288
+STARTUP_DISCOVERY_INSTRUCTION_LIMIT = int(
+    os.environ.get('OLDFRAME_STARTUP_DISCOVERY_LIMIT', '65536'), 0)
+if not 16384 <= STARTUP_DISCOVERY_INSTRUCTION_LIMIT <= 1048576:
+    raise ValueError('OLDFRAME_STARTUP_DISCOVERY_LIMIT must be between 16384 and 1048576')
 SEH_READY = 0xF17BE5
 PE_READY = 0xF17C4D
 HEAP_READY = 0xF17C52
@@ -113,6 +118,15 @@ STOPS = {0xF23011, 0xF23016, 0xF17C56, 0xF22EB4, 0xF17C67,
          0x1076DD7, 0x1076DEC, 0x1076E0D,
          0x1076EA7, 0x1076EBC, 0x1076EDD, 0x107707A,
          0x10774DA, 0x107752A,
+         0x1077BC7, 0x1077BDC, 0x1077BFD,
+         0x1077C97, 0x1077CAC, 0x1077CCD,
+         0x1077D49, 0x1077DE9, 0x1077F97, 0x1077FAC,
+         0x1078067, 0x107807C, 0x1078137, 0x107814C,
+         0x1078207, 0x107821C, 0x107823D, 0x10782B9, 0x1078359,
+         0x10783F9, 0x1078499, 0x10785D9, 0x1078679,
+         0x10787D7, 0x10787EC, 0x10788A7, 0x10788BC,
+         0x1078B67, 0x1078B7C,
+         0x1078C37, 0x1078C4C, 0x1078CE9,
          0x1067529,
          0xF2D4F3, 0xF1A754, 0xF303A5, 0xF303E3, 0xF21D4B, 0xF22AC4,
          0xF21E59, 0xF21F70}
@@ -143,7 +157,7 @@ RANGES = ((ENTRY, ENTRY + 10), (0xF23039, 0xF230D4),
           (0x1067260, 0x106726A), (0x402B40, 0x402B79),
           (0x1067270, 0x10672B7), (0x10672C0, 0x10672CC),
           (0x10672D0, 0x10672DC),
-          (0x10672E0, 0x1077730), (0x4172E0, 0x41739C),
+          (0x10672E0, 0x107A9A0), (0x4172E0, 0x41739C),
           (0x445C60, 0x445C6F), (0x451550, 0x4515EC),
           (0x451D20, 0x451D70), (0x415F00, 0x415F73),
           (0x45B450, 0x45B4D1),
@@ -317,7 +331,9 @@ def translate(insn):
     return lift.translate(insn)
 
 
-def discover(image, entry, ranges, stops, imports, limit=16384, indirect_targets=None):
+def discover(image, entry, ranges, stops, imports, limit=None, indirect_targets=None):
+    if limit is None:
+        limit = STARTUP_DISCOVERY_INSTRUCTION_LIMIT
     base, sections = lift.pe_sections(image)
     if indirect_targets is None:
         indirect_targets = INDIRECT_TARGETS
