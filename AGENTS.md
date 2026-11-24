@@ -29,8 +29,8 @@ v0.10.0 currently passes all 20 unit tests on the user's Windows machine and dis
 the original SigninReward texture in a Win32 window. The preview uses Rust
 for process startup and painting and translated x86 for archive reading and
 decompression. The bounded translated startup path has reached constructor
-checkpoint `01079EE0` after 1,021 logical constructors, with 213 original-x86
-comparisons covering all 18,388 admitted instructions. Continuous engine startup,
+checkpoint `0107B540` after 1,154 logical constructors, with 218 original-x86
+comparisons covering all 19,440 admitted instructions. Continuous engine startup,
 WinMain, and the title screen remain unverified. Read `README.md` and
 `INTERNALS.md` before extending the lift.
 
@@ -71,7 +71,7 @@ target\release\warframe-u51-decoder-recomp.exe "D:\Warframe 2012" --window
 ## Next milestone
 
 Continue the bounded original U5.1 startup path from constructor checkpoint
-`01079EE0`. Use table-derived constructor targets and generic grouped parity
+`0107B540`. Use table-derived constructor targets and generic grouped parity
 checks while completing required initialization, then transition to a
 continuous post-`__cinit` execution path toward `__wincmdln` at `00F22689`
 and WinMain at `00401140`. Keep the cache path as a regression check.

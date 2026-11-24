@@ -223,12 +223,13 @@ impl Memory {
                 let descriptor = self.read32(stack);
                 let size = self.read32(stack + 4);
                 let count = self.read32(stack + 8);
-                if ![0x128f238, 0x129a4c8, 0x12a18a8, 0x1313c98, 0x12a79f0, 0x12cacec].contains(&descriptor) || count != 1 || size == 0
+                if ![0x128f238, 0x129a4c8, 0x12a18a8, 0x1313c98, 0x12a79f0, 0x12cacec, 0x12cdb7c].contains(&descriptor) || count != 1 || size == 0
                     || (descriptor == 0x129a4c8 && size != 8)
                     || (descriptor == 0x12a18a8 && size != 0x30)
                     || (descriptor == 0x1313c98 && size != 0x38)
                     || (descriptor == 0x12a79f0 && size != 0x30)
                     || (descriptor == 0x12cacec && ![8, 44].contains(&size))
+                    || (descriptor == 0x12cdb7c && size != 8)
                 {
                     return Err(format!("unexpected game allocation {descriptor:#x}, {size}, {count}"));
                 }
@@ -927,6 +928,11 @@ pub fn run_checkpoints() -> Result<(), String> {
     run_constructor_batch_checkpoint(1009, 0x1079ce0)?;
     run_constructor_batch_checkpoint(1021, 0x1079ee0)?;
     run_constructor_batch_checkpoint(1072, 0x107a9a0)?;
+    run_constructor_batch_checkpoint(1125, 0x107afa0)?;
+    run_constructor_batch_checkpoint(1126, 0x107b010)?;
+    run_constructor_batch_checkpoint(1130, 0x107b0c0)?;
+    run_constructor_batch_checkpoint(1154, 0x107b540)?;
+    run_constructor_batch_checkpoint(1155, 0x107b610)?;
     run_allocator_checkpoints()?;
     run_locale_checkpoints()?;
     Ok(())

@@ -1726,6 +1726,25 @@ procedure identities; no pseudocode claim is made. Retained batch Evidence is
 Direct PE decoding and the complete original-x86 parity trace cover both
 functions and the surrounding batch.
 
+An automated constructor-table scan now groups consecutive initializers only
+while their direct calls stay within the verified helper set and their control
+flow remains understood. Constructors 1,022–1,072 are branch-free fixed-layout,
+scalar, short-string, callback, and destructor-registration shapes through
+`0107A9A0`. Constructors 1,073–1,125 add repeated calls to the already translated
+`00423B10` string interning helper and otherwise retain those shapes through
+`0107AFA0`. Their cumulative state and call sequence match original x86.
+
+Constructor 1,126 combines translated `004A5160` registry insertion with the
+existing narrow `00415AE0` string-copy host boundary. Its copied value remains
+inline, so the untaken heap cleanup sequence at `0107AFEA` is an explicit stop.
+Constructors 1,127–1,130 reuse the same inline-string, scalar, callback-only, and
+translated `00421AE0` object shapes; their untaken cleanup sequence at
+`0107B03A` is also explicit. Constructors 1,131–1,154 are branch-free verified
+shapes through `0107B540`. No new host substitute, unsupported instruction, or
+unresolved call was needed. Detailed Ghidra work was not repeated for these
+already analyzed helpers; the scanner identifies the next changed call or
+control-flow boundary for focused analysis.
+
 Startup discovery now defaults to a named 65,536-instruction safeguard instead
 of the nearly exhausted 16,384-instruction default.
 `OLDFRAME_STARTUP_DISCOVERY_LIMIT` can override it for controlled analysis, but
@@ -1734,20 +1753,20 @@ only to code generation and does not constrain a future continuous runtime.
 `verify-startup-debug.cmd "D:\Warframe 2012"` regenerates the lift, runs the
 Python generator tests, builds the debug executable, and performs the complete
 Unicorn parity and instruction-coverage comparison. Its Cargo build completed in
-12.29 seconds for checkpoint 1,021. Optimized milestone verification remains in
+11.86 seconds for checkpoint 1,154. Optimized milestone verification remains in
 `verify-startup.cmd`, including Rust tests and the cache/asset checks.
 
-`verify-startup.cmd "D:\Warframe 2012"` passes 213 original-x86 comparisons,
-including 147 constructor comparisons, and exercises all 18,388 reachable
+`verify-startup.cmd "D:\Warframe 2012"` passes 218 original-x86 comparisons,
+including 152 constructor comparisons, and exercises all 19,440 reachable
 instructions in the bounded group. All 20 Rust tests and five Python tests
 pass. Cache verification remains 44 framed entries, 12 unframed entries, one
 stored frame, and 192 compressed blocks across 25 archives. The headless asset
 check still loads the 43,708-byte SigninReward texture with a 256 x 32 top mip
 and three compressed frames.
 
-Last verified checkpoint: entry of constructor `01079EE0`, after the first 1,021
+Last verified checkpoint: entry of constructor `0107B540`, after the first 1,154
 logical constructors have returned. Next: extend the bounded constructor range from
-`01079EE0`, continuing to use table-derived targets and grouped parity checks,
+`0107B540`, continuing to use table-derived targets and grouped parity checks,
 then execute the post-`__cinit` path continuously toward WinMain.
 The alternate positive-duration
 path in `0041D1F0` remains recorded at `0041D209`. Continue through
