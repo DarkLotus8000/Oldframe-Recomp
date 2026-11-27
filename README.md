@@ -1,6 +1,14 @@
 # Oldframe Recomp
 
-Oldframe Recomp is a native Windows recompilation project for Warframe U5.1.
+Oldframe Recomp is a native Windows recompilation and game preservation project
+for Warframe U5.1, targeting the original closed-beta executable with build
+label `2012.12.31.16.20` (December 31, 2012).
+
+The goal is to preserve this historical version as a standalone game client
+for local use, independently of modern Warframe and its official live services.
+The project does not target the live client, online cheating, or anti-cheat
+circumvention. Original game binaries and assets are supplied locally and are
+not distributed with this repository.
 
 ## Project status
 
