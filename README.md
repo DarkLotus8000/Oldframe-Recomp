@@ -1,10 +1,35 @@
 # Oldframe Recomp
 
 Oldframe Recomp is a native Windows recompilation project for Warframe U5.1.
-The current executable verifies cache reads, displays a real game texture,
-and runs the original PE entry through CRT cookie, SEH, heap, per-thread,
-locale, lock, and standard-handle initialization. These checkpoints are verified against original x86;
-engine startup, the title screen, and the playable tutorial remain future work.
+
+## Project status
+
+**Early development — not yet bootable or playable.** The current executable
+is a verification harness, not a working game client.
+
+| Component | Status |
+| --- | --- |
+| Cache reading and decompression | Working for the tested synchronous cache paths |
+| Asset loading | Verified with the original SigninReward texture |
+| Asset preview | Working in a standalone Win32 window |
+| CRT initialization | Initial startup routines verified; constructor execution in progress |
+| Startup constructors | 1,154 / 2,290 verified (50.4%) |
+| Continuous startup and WinMain | Not yet verified |
+| Engine initialization and game rendering | Not yet verified |
+| Title screen, login and UI input | Not yet working |
+| Tutorial, movement and combat | Not yet working |
+
+
+The latest verified bounded startup checkpoint covers 19,440 x86 instructions
+and passes 218 comparisons against original x86, along with 20 Rust tests and
+five Python tests. The next milestone is to complete the constructor table and
+continue through the post-CRT startup path toward WinMain.
+
+The constructor percentage measures only that startup stage, not completion
+of the entire game. See [INTERNALS.md](INTERNALS.md) for the latest verified
+checkpoint and technical details.
+
+## Implementation
 
 This project statically translates selected cache code from the 32-bit U5.1
 `Warframe.exe`. `CacheThreadImpl::CalculateReadPages` at `0x004A5C60`
