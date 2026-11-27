@@ -21,7 +21,24 @@ preview are the first verified pieces of that work.
   checks. Treat the original installation as read-only. Keep the original
   executable, DLLs, cache files, extracted game assets, and locally
   generated `src/lifted.rs` out of version control. Keep code changes local
-  unless asked to publish them.
+  unless asked to publish them. Never commit proprietary game inputs or
+  generated analysis databases.
+
+## Session handoff and analysis
+
+At the start of each session, inspect `git status`, the recent commits, and
+`INTERNALS.md` for the latest verified checkpoint. The baseline below is a
+reference, not a reason to redo completed work. Preserve existing human or
+agent changes; do not reset, overwrite, or amend them. Use a separate branch
+and worktree if another contributor is actively editing the same checkout.
+
+Use REA with IDA/Hex-Rays or Ghidra when available. Prefer IDA for targeted
+pseudocode when its adapter supports the requested operation; use Ghidra or
+direct PE/Capstone analysis when necessary. Keep requests focused on changed
+or unresolved boundaries rather than dumping large function lists or
+reanalyzing known helpers. Treat decompiler output as analysis evidence, not
+proof of equivalence; verify translated behavior against original x86.
+Do not invent missing evidence or claim untested progress.
 
 ## Known working baseline
 
@@ -89,3 +106,13 @@ waiting for a manual test after each edit. Keep changes small and update
 command. Record the last verified checkpoint and the next concrete step if
 progress stops. Report desktop-only checks that actually need someone at the
 machine separately from the headless results.
+
+## Git workflow
+
+Create small, descriptive local commits after verified, meaningful milestones,
+including the corresponding tests and checkpoint documentation. Review the
+staged diff and stage only relevant changes; do not commit unrelated user work,
+original binaries, assets, generated output, analysis databases, or local logs.
+Do not rewrite history, force-push, or push unless explicitly requested.
+If validation fails or the native inputs are unavailable, report the limitation
+and distinguish unverified work from the last verified milestone.
