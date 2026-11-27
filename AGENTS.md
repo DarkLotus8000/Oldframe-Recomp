@@ -10,17 +10,19 @@ preview are the first verified pieces of that work.
 
 ## Historical scope
 
-This project exclusively targets the closed-beta Warframe U5.1 executable
-with build label `2012.12.31.16.20` (December 31, 2012). The build label
-identifies the target rather than the publication date of the patch notes.
+This project targets the closed-beta Warframe U5.1 build, including its
+original executable (build label `2012.12.31.16.20`, December 31, 2012),
+cache files, assets, and related engine formats. The build label identifies
+the executable rather than the publication date of the patch notes.
 The purpose is historical game preservation through static recompilation,
-local execution, and verification against the original x86 code.
+local execution, verification against original x86 code, and development of
+related cache and asset tools.
 
-The target is a standalone historical client; any server-dependent testing
-uses a local SpaceNinjaServer instance. Modern Warframe, official live
-services, online cheating, and anti-cheat circumvention are outside the
-project scope. Keep proprietary game inputs local and respect applicable
-rights and tool restrictions.
+The target is a standalone historical client; server-dependent testing uses
+a local SpaceNinjaServer instance. The project is independent of modern
+Warframe and official live services and is not intended for online cheating.
+Keep proprietary game inputs local and respect applicable rights and tool
+restrictions.
 
 ## Local inputs
 
