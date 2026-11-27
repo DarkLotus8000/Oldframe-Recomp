@@ -38,15 +38,22 @@ memory-copy and allocation calls. A
 
 See [INTERNALS.md](INTERNALS.md) for the routine map, host boundaries, and verification details.
 
-## Continue in Codex
+## Continue development
 
-Open `D:\GitHub\Oldframe-Recomp` as a local project in Codex on Windows.
-[AGENTS.md](AGENTS.md) records the original executable and cache paths, the
-working baseline, and the commands Codex can run from CMD for validation.
-Start a new thread in the repo and paste this goal.
+Open the repository as a local project on Windows. Read [AGENTS.md](AGENTS.md)
+for shared development instructions and [INTERNALS.md](INTERNALS.md) for the
+latest verified checkpoint. Coding agents can use the same instructions;
+`CLAUDE.md` imports them for Claude Code.
+
+Before starting or resuming work, inspect the working tree and recent commits.
+If switching agents, finish or stop the current session before starting the
+next one in the same checkout. Use separate branches and worktrees for parallel
+work.
+
+Use the following task when starting a new development session:
 
 ```text
-/goal Read AGENTS.md and INTERNALS.md and continue from the last verified CRT startup checkpoint toward the U5.1 title screen and playable tutorial with movement and basic combat. Verify new translated behavior against original x86, preserve verify-startup.cmd checks, and record checkpoints in INTERNALS.md. Verify the title screen independently of SpaceNinjaServer; use the local server only when login or later steps require it. Keep changes local and the original installation read-only.
+Read AGENTS.md and INTERNALS.md and continue from the last verified startup checkpoint toward the U5.1 title screen and playable tutorial with movement and basic combat. Verify new translated behavior against original x86, preserve verify-startup.cmd checks, and record checkpoints in INTERNALS.md. Verify the title screen independently of SpaceNinjaServer; use the local server only when login or later steps require it. Keep changes local and the original installation read-only.
 ```
 
 ## Run on Windows
