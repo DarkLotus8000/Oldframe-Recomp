@@ -5,3 +5,6 @@
 /src/startup_data.bin
 /__pycache__/
 /.codex-*.log
+/.claude-*.log
+/.claude/settings.local.json
+/CLAUDE.local.md
